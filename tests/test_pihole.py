@@ -50,3 +50,25 @@ def test_connection_refused(client):
     result = client.get_pihole_stats()
     assert result["success"] is False
     assert "192.168.0.10" in result["attempted"]
+
+
+@respx.mock
+def test_dns_resolution_not_blocked(client):
+    respx.get("http://192.168.0.10/admin/api.php").mock(
+        return_value=httpx.Response(200, text="ads.example.com")
+    )
+    result = client.test_dns_resolution("google.com")
+    assert result["success"] is True
+    assert result["hostname"] == "google.com"
+    assert result["most_recently_blocked"] == "ads.example.com"
+    assert result["is_recently_blocked"] is False
+
+
+@respx.mock
+def test_dns_resolution_is_blocked(client):
+    respx.get("http://192.168.0.10/admin/api.php").mock(
+        return_value=httpx.Response(200, text="ads.google.com")
+    )
+    result = client.test_dns_resolution("ads.google.com")
+    assert result["success"] is True
+    assert result["is_recently_blocked"] is True

@@ -13,7 +13,7 @@ class PiholeClient:
         try:
             with httpx.Client(timeout=10) as client:
                 resp = client.get(url, params={"summaryRaw": "", "auth": self.api_token})
-            resp.raise_for_status()
+                resp.raise_for_status()
             data = resp.json()
             if data.get("FTLnotrunning") is True:
                 return {"success": False, "error": "Pi-hole FTL is not running",
@@ -31,8 +31,8 @@ class PiholeClient:
             return {"success": False, "error": f"HTTP {e.response.status_code}",
                     "suggestion": "Check Pi-hole host in config.json and that the admin interface is reachable",
                     "attempted": url}
-        except httpx.ConnectError:
-            return {"success": False, "error": "Connection refused",
+        except httpx.ConnectError as e:
+            return {"success": False, "error": str(e),
                     "suggestion": f"Cannot reach Pi-hole at {self.host} — verify IP in config.json",
                     "attempted": url}
         except Exception as e:
