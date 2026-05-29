@@ -29,7 +29,7 @@ class Config:
     pihole: PiholeConfig
 
 
-def load_config(path=None) -> Config:
+def load_config(path: Path | str | None = None) -> Config:
     if path is None:
         path = Path(__file__).parent.parent / "config.json"
     with open(path) as f:
