@@ -6,3 +6,7 @@ __pycache__/
 *.egg-info/
 dist/
 .venv/
+.DS_Store
+.env
+build/
+.claude/settings.local.json
