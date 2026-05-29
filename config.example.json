@@ -1,0 +1,15 @@
+{
+  "er605": {
+    "host": "192.168.0.1",
+    "username": "admin",
+    "password": "your-router-password"
+  },
+  "deco": {
+    "host": "192.168.0.1",
+    "password": "your-deco-app-password"
+  },
+  "pihole": {
+    "host": "192.168.0.x",
+    "api_token": "your-pihole-api-token"
+  }
+}
