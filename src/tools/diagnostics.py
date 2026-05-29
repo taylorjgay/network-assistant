@@ -45,9 +45,14 @@ def traceroute_host(host: str) -> dict:
             m = re.match(r"\s*(\d+)\s+([\d.]+|\*)\s+([\d.]+)\s+ms", line)
             if m:
                 hops.append({"hop": int(m.group(1)), "ip": m.group(2), "ms": float(m.group(3))})
+            else:
+                timeout_m = re.match(r"\s*(\d+)\s+(\*\s*)+$", line)
+                if timeout_m:
+                    hops.append({"hop": int(timeout_m.group(1)), "ip": None, "ms": None, "timeout": True})
         return {"success": True, "host": host, "hops": hops, "raw": result.stdout}
     except subprocess.TimeoutExpired:
-        return {"success": False, "host": host, "error": "traceroute timed out after 60s", "suggestion": ""}
+        return {"success": False, "host": host, "error": "traceroute timed out after 60s",
+                "suggestion": "Host may be many hops away or a firewall is blocking ICMP responses"}
     except Exception as e:
         return {"success": False, "host": host, "error": str(e), "suggestion": "Check that 'traceroute' is available on PATH"}
 
@@ -62,6 +67,11 @@ def test_dns_resolution(hostname: str, dns_server: str = None) -> dict:
                 ["dig", f"@{dns_server}", hostname, "+short"],
                 capture_output=True, text=True, timeout=10
             )
+            if result.returncode != 0:
+                elapsed_ms = (time.monotonic() - start) * 1000
+                return {"success": False, "hostname": hostname, "dns_server": dns_server,
+                        "error": result.stderr.strip() or f"dig exited with code {result.returncode}",
+                        "suggestion": f"Check that '{dns_server}' is reachable and is a valid DNS server"}
             addresses = [line.strip() for line in result.stdout.splitlines() if line.strip()]
             elapsed_ms = (time.monotonic() - start) * 1000
             return {"success": True, "hostname": hostname, "dns_server": dns_server,
@@ -76,7 +86,8 @@ def test_dns_resolution(hostname: str, dns_server: str = None) -> dict:
         return {"success": False, "hostname": hostname, "error": str(e),
                 "suggestion": "DNS resolution failed — Pi-hole may be blocking this domain or DNS is misconfigured"}
     except Exception as e:
-        return {"success": False, "hostname": hostname, "error": str(e), "suggestion": ""}
+        return {"success": False, "hostname": hostname, "error": str(e),
+                "suggestion": "Check that 'dig' is available on PATH if using a custom DNS server"}
 
 
 def run_speedtest() -> dict:

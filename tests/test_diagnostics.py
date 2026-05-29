@@ -1,7 +1,7 @@
 import subprocess
 from unittest.mock import patch, MagicMock
 import pytest
-from src.tools.diagnostics import ping_host, traceroute_host, test_dns_resolution as _dns_resolve
+from src.tools.diagnostics import ping_host, traceroute_host, run_speedtest, test_dns_resolution as _dns_resolve
 
 
 def test_ping_host_success():
@@ -71,5 +71,29 @@ def test_test_dns_resolution_failure():
     with patch("socket.getaddrinfo") as mock_dns:
         mock_dns.side_effect = socket.gaierror("Name or service not known")
         result = _dns_resolve("doesnotexist.invalid")
+    assert result["success"] is False
+    assert "suggestion" in result
+
+
+def test_run_speedtest_success():
+    mock_st = MagicMock()
+    mock_st.download.return_value = 950_000_000
+    mock_st.upload.return_value = 450_000_000
+    mock_st.results.dict.return_value = {
+        "ping": 5.2,
+        "server": {"name": "Test Server", "city": "Chicago", "country": "US"},
+    }
+    with patch("speedtest.Speedtest", return_value=mock_st):
+        result = run_speedtest()
+    assert result["success"] is True
+    assert result["download_mbps"] == 950.0
+    assert result["upload_mbps"] == 450.0
+    assert result["ping_ms"] == 5.2
+    assert result["server"] == "Test Server"
+
+
+def test_run_speedtest_failure():
+    with patch("speedtest.Speedtest", side_effect=Exception("no internet")):
+        result = run_speedtest()
     assert result["success"] is False
     assert "suggestion" in result
