@@ -2,7 +2,6 @@ import base64
 import hashlib
 import json
 import os
-import time
 
 import httpx
 from Crypto.Cipher import AES, PKCS1_OAEP
@@ -38,7 +37,7 @@ class DecoClient:
         cipher = AES.new(self._aes_key, AES.MODE_CBC, self._aes_iv)
         return unpad(cipher.decrypt(data), AES.block_size).decode()
 
-    def _get_encryption_params(self, client: httpx.Client) -> tuple[bytes, bytes, str]:
+    def _get_encryption_params(self, client: httpx.Client) -> tuple[int, int, str]:
         """Phase 1: get RSA public key from device, return (rsa_key_n, rsa_key_e, seq)."""
         payload = {"params": {"operation": "read"}}
         resp = client.post(self._base, json={"method": "do", "login": payload})
@@ -76,7 +75,8 @@ class DecoClient:
             encrypted_aes = base64.b64encode(
                 cipher_rsa.encrypt(self._aes_key + self._aes_iv)
             ).decode()
-        except Exception:
+        except Exception as e:
+            self._last_auth_error = f"RSA key exchange failed: {e}"
             return False
 
         # Send encrypted login
@@ -92,8 +92,8 @@ class DecoClient:
             if data.get("error_code") == 0:
                 self._stok = data.get("stok", "")
                 return True
-        except Exception:
-            pass
+        except Exception as e:
+            self._last_auth_error = f"Login response decryption failed: {e}"
         return False
 
     def _authenticated_request(self, payload: dict) -> dict:
@@ -101,7 +101,11 @@ class DecoClient:
         with httpx.Client(timeout=15) as client:
             if not self._stok:
                 if not self._authenticate(client):
-                    raise Exception("Deco authentication failed — check deco.password in config.json")
+                    detail = getattr(self, "_last_auth_error", "")
+                    raise Exception(
+                        f"Deco authentication failed{f' ({detail})' if detail else ''} "
+                        "— check deco.password in config.json"
+                    )
 
             url = f"http://{self.host}/cgi-bin/luci/;stok={self._stok}/ds"
             if self._aes_key:

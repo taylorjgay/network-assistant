@@ -1,9 +1,5 @@
-import base64
-import json
 import pytest
-import respx
-import httpx
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from src.tools.deco import DecoClient
 
 
@@ -12,12 +8,6 @@ def client():
     return DecoClient(host="192.168.0.1", password="decopass")
 
 
-def make_mock_encrypted_response(payload: dict) -> str:
-    """Return a base64-encoded fake encrypted response for testing."""
-    return base64.b64encode(json.dumps(payload).encode()).decode()
-
-
-@respx.mock
 def test_get_connected_clients_success(client):
     client_list_payload = {
         "error_code": 0,
@@ -48,7 +38,6 @@ def test_get_connected_clients_success(client):
     assert result["clients"][0]["ip"] == "192.168.68.100"
 
 
-@respx.mock
 def test_get_mesh_health_success(client):
     device_list_payload = {
         "error_code": 0,
