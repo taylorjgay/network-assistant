@@ -23,7 +23,8 @@ _deco = DecoClient(**vars(_cfg.deco)) if _cfg else None
 _pihole = PiholeClient(**vars(_cfg.pihole)) if _cfg else None
 
 _NO_CONFIG = {"success": False, "error": "config.json not found",
-              "suggestion": "Copy config.example.json to config.json and fill in your device details"}
+              "suggestion": "Copy config.example.json to config.json and fill in your device details",
+              "attempted": "n/a — no config.json"}
 
 
 @mcp.tool()
@@ -57,7 +58,7 @@ def get_pihole_stats() -> dict:
 
 
 @mcp.tool()
-def test_dns_resolution(hostname: str, dns_server: str = None) -> dict:
+def test_dns_resolution(hostname: str, dns_server: str | None = None) -> dict:
     """Resolve a hostname and report which DNS server answered and the resolved IPs.
     Optionally specify dns_server (e.g. '8.8.8.8') to bypass Pi-hole."""
     return _test_dns_resolution(hostname, dns_server)
