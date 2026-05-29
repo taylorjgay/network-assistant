@@ -52,7 +52,7 @@ def traceroute_host(host: str) -> dict:
         return {"success": False, "host": host, "error": str(e), "suggestion": "Check that 'traceroute' is available on PATH"}
 
 
-def resolve_dns(hostname: str, dns_server: str = None) -> dict:
+def test_dns_resolution(hostname: str, dns_server: str = None) -> dict:
     """Resolve a hostname and return the addresses."""
     start = time.monotonic()
     try:

@@ -1,7 +1,7 @@
 import subprocess
 from unittest.mock import patch, MagicMock
 import pytest
-from src.tools.diagnostics import ping_host, traceroute_host, resolve_dns
+from src.tools.diagnostics import ping_host, traceroute_host, test_dns_resolution as _dns_resolve
 
 
 def test_ping_host_success():
@@ -60,7 +60,7 @@ def test_traceroute_host_success():
 def test_test_dns_resolution_success():
     with patch("socket.getaddrinfo") as mock_dns:
         mock_dns.return_value = [(2, 1, 6, "", ("142.250.80.46", 0))]
-        result = resolve_dns("google.com")
+        result = _dns_resolve("google.com")
     assert result["success"] is True
     assert "142.250.80.46" in result["addresses"]
     assert result["hostname"] == "google.com"
@@ -70,6 +70,6 @@ def test_test_dns_resolution_failure():
     import socket
     with patch("socket.getaddrinfo") as mock_dns:
         mock_dns.side_effect = socket.gaierror("Name or service not known")
-        result = resolve_dns("doesnotexist.invalid")
+        result = _dns_resolve("doesnotexist.invalid")
     assert result["success"] is False
     assert "suggestion" in result
