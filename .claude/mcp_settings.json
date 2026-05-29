@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "network-assistant": {
+      "command": "/Users/taylorgay/Documents/Claude/Projects/NetworkAssistant/.venv/bin/python",
+      "args": ["-m", "src.server"],
+      "cwd": "/Users/taylorgay/Documents/Claude/Projects/NetworkAssistant"
+    }
+  }
+}
