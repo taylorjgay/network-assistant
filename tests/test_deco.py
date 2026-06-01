@@ -31,26 +31,32 @@ DEVICE_LIST_PAYLOAD = {
             {
                 "mac": "AA:11:22:33:44:55",
                 "device_ip": "192.168.0.100",
-                "inet_status": "online",
-                "master": True,
-                "connection_type": "wired",
-                "signal_level": {"band5_0": 0},
+                "nickname": "Office",
+                "role": "master",
+                "inet_status": "offline",
+                "inet_error_msg": "with_ip_dynamic_ip",
+                "connection_type": None,
+                "signal_strength": {},
             },
             {
                 "mac": "BB:11:22:33:44:55",
                 "device_ip": "192.168.0.101",
-                "inet_status": "online",
-                "master": False,
+                "nickname": "Basement",
+                "role": "slave",
+                "group_status": "connected",
+                "inet_status": "offline",
                 "connection_type": "wired",
-                "signal_level": {"band5_0": 0},
+                "signal_strength": {"band5": -60},
             },
             {
                 "mac": "CC:11:22:33:44:55",
                 "device_ip": "192.168.0.102",
-                "inet_status": "online",
-                "master": False,
+                "nickname": "Bedroom",
+                "role": "slave",
+                "group_status": "connected",
+                "inet_status": "offline",
                 "connection_type": "wireless",
-                "signal_level": {"band5_0": -65},
+                "signal_strength": {"band5": -65},
             },
         ]
     },
@@ -87,9 +93,11 @@ def test_get_mesh_health_success(client):
     assert result["node_count"] == 3
     primary = next(n for n in result["nodes"] if n["is_primary"])
     assert primary["mac"] == "AA:11:22:33:44:55"
-    assert primary["backhaul"] == "wired"
+    assert primary["nickname"] == "Office"
+    assert primary["mesh_status"] == "connected"
     wireless = next(n for n in result["nodes"] if n["backhaul"] == "wireless")
     assert wireless["signal_level_dbm"] == -65
+    assert wireless["inet_status"] == "offline"
 
 
 def test_get_connected_clients_auth_failure(client):

@@ -199,10 +199,18 @@ class DecoClient:
                     {
                         "mac": n.get("mac"),
                         "ip": n.get("device_ip"),
-                        "status": n.get("inet_status"),
-                        "is_primary": n.get("master", False),
+                        "nickname": n.get("nickname"),
+                        "is_primary": n.get("role") == "master",
+                        # mesh_status: is this node connected to the mesh?
+                        "mesh_status": (
+                            "connected" if n.get("role") == "master"
+                            else n.get("group_status", "unknown")
+                        ),
+                        # inet_status: does the Deco see internet? ("offline" = real outage)
+                        "inet_status": n.get("inet_status"),
+                        "inet_error": n.get("inet_error_msg"),
                         "backhaul": n.get("connection_type"),
-                        "signal_level_dbm": n.get("signal_level", {}).get("band5_0"),
+                        "signal_level_dbm": n.get("signal_strength", {}).get("band5"),
                     }
                     for n in nodes_raw
                 ]
