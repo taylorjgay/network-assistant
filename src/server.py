@@ -42,13 +42,17 @@ def get_router_info() -> dict:
 @mcp.tool()
 def get_connected_clients() -> dict:
     """Get all devices on the Deco mesh: hostname, IP, MAC, which node, band."""
-    return _deco.get_connected_clients() if _deco else _NO_CONFIG
+    if not _cfg:
+        return _NO_CONFIG
+    return DecoClient(**vars(_cfg.deco)).get_connected_clients()
 
 
 @mcp.tool()
 def get_mesh_health() -> dict:
     """Get Deco node status: online/offline, wired vs wireless backhaul, signal strength."""
-    return _deco.get_mesh_health() if _deco else _NO_CONFIG
+    if not _cfg:
+        return _NO_CONFIG
+    return DecoClient(**vars(_cfg.deco)).get_mesh_health()
 
 
 @mcp.tool()

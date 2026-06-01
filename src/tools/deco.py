@@ -150,7 +150,15 @@ class DecoClient:
             content=urlencode({"sign": sign, "data": enc_body}).encode(),
             headers=self._headers,
         )
-        raw = resp.json()
+        try:
+            raw = resp.json()
+        except Exception:
+            # Deco sends raw AES-encrypted body on 500 errors (not wrapped in JSON)
+            try:
+                error_msg = self._aes_decrypt(resp.text.strip())
+            except Exception:
+                error_msg = f"HTTP {resp.status_code}: {resp.text[:200]}"
+            raise Exception(f"Deco returned error: {error_msg}")
         if "data" in raw:
             return json.loads(self._aes_decrypt(raw["data"]))
         return raw
