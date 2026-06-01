@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__network-assistant__get_router_info",
+      "mcp__network-assistant__get_wan_status",
+      "mcp__network-assistant__ping_host",
+      "mcp__network-assistant__traceroute_host",
+      "mcp__network-assistant__test_dns_resolution",
+      "mcp__network-assistant__run_speedtest",
+      "mcp__network-assistant__get_connected_clients",
+      "mcp__network-assistant__get_mesh_health",
+      "mcp__network-assistant__get_pihole_stats",
+      "Bash(.venv/bin/pytest tests/test_er605.py -v 2>&1)",
+      "Bash(.venv/bin/pytest -v)",
+      "Bash(.venv/bin/pytest -v 2>&1)",
+      "Bash(.venv/bin/pytest tests/test_diagnostics.py -v)",
+      "Bash(.venv/bin/pytest tests/test_er605.py -v)",
+      "Bash(.venv/bin/pytest tests/test_deco.py -v)",
+      "Bash(.venv/bin/pytest tests/test_deco.py -v 2>&1)"
+    ]
+  }
+}
