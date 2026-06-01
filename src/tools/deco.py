@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import time
+from urllib.parse import urlencode
 
 import httpx
 from Crypto.Cipher import AES
@@ -27,8 +28,11 @@ class DecoClient:
         self._hash: str | None = None       # MD5("admin" + password), reused for all request signs
         self._key2_mod: str | None = None   # RSA key2 modulus, used to sign all requests
         self._seq: int | None = None        # Base seq from form=auth, constant across all requests
+        # Device expects application/json Content-Type (confirmed from browser HAR)
+        # Steps 1+2 send JSON body; step 3 sends URL-encoded sign+data with this same header
         self._headers = {
-            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
             "X-Requested-With": "XMLHttpRequest",
             "Origin": f"https://{host}",
             "Referer": f"https://{host}/webpages/index.html",
@@ -70,15 +74,18 @@ class DecoClient:
     def _authenticate(self, client: httpx.Client) -> bool:
         base = f"https://{self.host}/cgi-bin/luci/;stok=/login"
 
+        # Steps 1+2: send as JSON body (browser sends {"operation":"read"} with application/json)
+        json_read = json.dumps({"operation": "read"}).encode()
+
         # Step 1: RSA key1 (1024-bit) for password encryption
-        r1 = client.post(f"{base}?form=keys", data={"operation": "read"}, headers=self._headers)
+        r1 = client.post(f"{base}?form=keys", content=json_read, headers=self._headers)
         d1 = r1.json()
         if d1.get("error_code") != 0:
             return False
         key1_mod = d1["result"]["password"][0]
 
         # Step 2: RSA key2 (512-bit) + seq for session signature
-        r2 = client.post(f"{base}?form=auth", data={"operation": "read"}, headers=self._headers)
+        r2 = client.post(f"{base}?form=auth", content=json_read, headers=self._headers)
         d2 = r2.json()
         if d2.get("error_code") != 0:
             return False
@@ -102,17 +109,17 @@ class DecoClient:
         # Hash = MD5("admin" + password) — confirmed from device JS setHash("admin", e)
         self._hash = hashlib.md5(("admin" + self.password).encode("utf-8")).hexdigest()
 
-        # AES-CBC-PKCS7 encrypt the login body
-        body_json = json.dumps({"password": enc_pwd_hex, "operation": "login"})
+        # AES-CBC-PKCS7 encrypt the login body — password is nested under "params" (confirmed from HAR)
+        body_json = json.dumps({"params": {"password": enc_pwd_hex}, "operation": "login"})
         enc_body = self._aes_encrypt(body_json)
 
         # Login sign includes AES key so the server can decrypt subsequent requests
         sign_hex = self._sign(enc_body, include_aes_key=True)
 
-        # Step 3: Login — data= dict lets httpx URL-encode the base64 body correctly
+        # Step 3: Login — URL-encode sign+data (browser sends form body with JSON Content-Type)
         r3 = client.post(
-            f"{base}?form=login&operation=login",
-            data={"sign": sign_hex, "data": enc_body},
+            f"{base}?form=login",
+            content=urlencode({"sign": sign_hex, "data": enc_body}).encode(),
             headers=self._headers,
         )
         raw = r3.json()
@@ -138,7 +145,11 @@ class DecoClient:
         enc_body = self._aes_encrypt(json.dumps({"operation": "read"}))
         sign = self._sign(enc_body, include_aes_key=False)
         url = f"https://{self.host}/cgi-bin/luci/;stok={self._stok}/admin/{resource}?form={form}"
-        resp = client.post(url, data={"sign": sign, "data": enc_body}, headers=self._headers)
+        resp = client.post(
+            url,
+            content=urlencode({"sign": sign, "data": enc_body}).encode(),
+            headers=self._headers,
+        )
         raw = resp.json()
         if "data" in raw:
             return json.loads(self._aes_decrypt(raw["data"]))
