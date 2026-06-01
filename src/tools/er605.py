@@ -1,5 +1,21 @@
-import hashlib
+import json
 import httpx
+
+
+_HEADERS = {
+    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    "X-Requested-With": "XMLHttpRequest",
+}
+
+
+def _rsa_encrypt(plaintext: str, modulus_hex: str) -> str:
+    """RSA with ER605 'nopadding': right-pad plaintext to key size with zeros, then textbook RSA."""
+    n = int(modulus_hex, 16)
+    key_size = (n.bit_length() + 7) // 8
+    encoded = plaintext.encode("utf-8")
+    padded = encoded + b"\x00" * (key_size - len(encoded))
+    m = int.from_bytes(padded, "big")
+    return format(pow(m, 65537, n), "0256x")
 
 
 class ER605Client:
@@ -7,84 +23,166 @@ class ER605Client:
         self.host = host
         self.username = username
         self.password = password
-        self._base = f"http://{host}"
+        self._base = f"https://{host}"
+        self._login_url = f"{self._base}/cgi-bin/luci/;stok=/login?form=login"
 
-    def _md5(self, s: str) -> str:
-        return hashlib.md5(s.encode()).hexdigest().upper()
+    def _headers(self) -> dict:
+        return {
+            **_HEADERS,
+            "Origin": self._base,
+            "Referer": f"{self._base}/webpages/login.html",
+        }
 
-    def _login(self, client: httpx.Client) -> str | None:
-        """Authenticate and return stok session token, or None on failure."""
-        resp = client.post(f"{self._base}/", json={
-            "method": "do",
-            "login": {"username": self.username, "password": self._md5(self.password)}
-        })
-        data = resp.json()
-        if data.get("error_code") != 0:
-            return None
-        return data.get("login", {}).get("stok")
-
-    def _post(self, client: httpx.Client, stok: str, payload: dict) -> dict:
-        resp = client.post(f"{self._base}/stok={stok}/ds", json=payload)
+    def _post_form(self, client: httpx.Client, url: str, payload: dict) -> dict:
+        resp = client.post(url, data={"data": json.dumps(payload)}, headers=self._headers())
         return resp.json()
 
-    def get_wan_status(self) -> dict:
-        """Get WAN1/WAN2 link status, IPs, and failover state."""
-        url = f"{self._base}"
+    def _get_uptime(self, client: httpx.Client, step1_result: dict) -> str:
+        """Get uptime for password encryption from locale endpoint (operation=read format)."""
+        uptime = step1_result.get("uptime")
+        if uptime is not None:
+            return str(uptime)
         try:
-            with httpx.Client(timeout=10) as client:
-                stok = self._login(client)
+            resp = client.post(
+                f"{self._base}/cgi-bin/luci/;stok=/locale?form=lang",
+                data={"operation": "read"},
+                headers=self._headers(),
+            )
+            uptime = resp.json().get("result", {}).get("uptime")
+            if uptime is not None:
+                return str(uptime)
+        except Exception:
+            pass
+        return "0"
+
+    def _login(self, client: httpx.Client) -> tuple[str | None, str]:
+        """Return (stok, error_detail). stok is None on failure."""
+        resp1 = self._post_form(client, self._login_url, {"method": "get"})
+        if resp1.get("error_code") != "0":
+            return None, f"pre-login key exchange failed: error_code={resp1.get('error_code')}"
+
+        result = resp1.get("result", {})
+        modulus_hex = result["password"][0]
+
+        uptime = self._get_uptime(client, result)
+        plaintext = f"{self.password}_{uptime}"
+        encrypted = _rsa_encrypt(plaintext, modulus_hex)
+
+        resp2 = self._post_form(client, self._login_url, {
+            "method": "login",
+            "params": {"username": self.username, "password": encrypted},
+        })
+        if resp2.get("error_code") != "0":
+            code = resp2.get("error_code")
+            detail = f"login rejected: error_code={code}"
+            if code == "700":
+                detail += " (wrong password or uptime mismatch)"
+            return None, detail
+
+        stok = resp2.get("result", {}).get("stok")
+        return stok, ""
+
+    def _api(self, client: httpx.Client, stok: str, resource: str, form: str) -> dict:
+        url = f"{self._base}/cgi-bin/luci/;stok={stok}/admin/{resource}?form={form}"
+        return self._post_form(client, url, {"method": "get"})
+
+    def get_wan_status(self) -> dict:
+        url = self._base
+        try:
+            with httpx.Client(verify=False, timeout=10) as client:
+                stok, err = self._login(client)
                 if stok is None:
-                    return {"success": False, "error": "ER605 authentication failed",
-                            "suggestion": "Check er605.username and er605.password in config.json",
-                            "attempted": url}
-                data = self._post(client, stok, {"method": "get", "network": {"name": "wan_status"}})
-            if data.get("error_code") != 0:
-                return {"success": False, "error": f"ER605 error_code {data.get('error_code')}",
-                        "suggestion": "WAN status endpoint may differ on this firmware version",
-                        "attempted": url, "raw": data}
-            wan = data.get("network", {}).get("wan_status", {})
+                    return {
+                        "success": False,
+                        "error": f"ER605 authentication failed: {err}",
+                        "suggestion": "Check er605.username and er605.password in config.json",
+                        "attempted": url,
+                    }
+                data = self._api(client, stok, "interface", "status2")
+
+            if data.get("error_code") != "0":
+                return {
+                    "success": False,
+                    "error": f"ER605 interface endpoint error {data.get('error_code')}",
+                    "suggestion": "WAN status endpoint may differ on this firmware version",
+                    "attempted": url,
+                    "raw": data,
+                }
+
+            interfaces = data.get("result", {}).get("normal", [])
+            wan_ports = [i for i in interfaces if i.get("t_name", "").startswith("WAN")]
             return {
                 "success": True,
-                "wan1": {
-                    "link_status": wan.get("link_status"),
-                    "ip": wan.get("ip"),
-                    "proto": wan.get("proto"),
-                    "uptime_seconds": wan.get("uptime"),
-                },
-                "active_wan": "wan1",
+                "interfaces": [
+                    {
+                        "name": i.get("t_name"),
+                        "up": i.get("t_isup"),
+                        "ip": i.get("ipaddr"),
+                        "proto": i.get("t_proto"),
+                        "gateway": i.get("gateway"),
+                        "dns1": i.get("dns1"),
+                    }
+                    for i in wan_ports
+                ],
             }
         except httpx.ConnectError:
-            return {"success": False, "error": "Cannot connect to ER605",
-                    "suggestion": f"Verify er605.host in config.json — tried {self.host}",
-                    "attempted": url}
+            return {
+                "success": False,
+                "error": "Cannot connect to ER605",
+                "suggestion": f"Verify er605.host in config.json — tried {self.host}",
+                "attempted": url,
+            }
         except Exception as e:
             return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
 
     def get_router_info(self) -> dict:
-        """Get ER605 firmware version, model, and uptime."""
         url = self._base
         try:
-            with httpx.Client(timeout=10) as client:
-                stok = self._login(client)
+            with httpx.Client(verify=False, timeout=10) as client:
+                stok, err = self._login(client)
                 if stok is None:
-                    return {"success": False, "error": "ER605 authentication failed",
-                            "suggestion": "Check er605.username and er605.password in config.json",
-                            "attempted": url}
-                data = self._post(client, stok, {"method": "get", "system": {"name": ["name", "status"]}})
-            if data.get("error_code") != 0:
-                return {"success": False, "error": f"ER605 error_code {data.get('error_code')}",
-                        "suggestion": "System info endpoint may differ on this firmware version",
-                        "attempted": url, "raw": data}
-            info = data.get("system", {}).get("name", {})
+                    return {
+                        "success": False,
+                        "error": f"ER605 authentication failed: {err}",
+                        "suggestion": "Check er605.username and er605.password in config.json",
+                        "attempted": url,
+                    }
+                fw_data = self._api(client, stok, "firmware", "upgrade")
+                sys_data = self._api(client, stok, "sys_status", "all_usage")
+                locale_resp = client.post(
+                    f"{self._base}/cgi-bin/luci/;stok=/locale?form=lang",
+                    data={"operation": "read"},
+                    headers=self._headers(),
+                )
+                locale_result = locale_resp.json().get("result", {})
+
+            if fw_data.get("error_code") != "0":
+                return {
+                    "success": False,
+                    "error": f"ER605 firmware endpoint error {fw_data.get('error_code')}",
+                    "suggestion": "Firmware info endpoint may differ on this firmware version",
+                    "attempted": url,
+                    "raw": fw_data,
+                }
+
+            fw = fw_data.get("result", {})
+            sys = sys_data.get("result", {}) if sys_data.get("error_code") == "0" else {}
+            cpu = sys.get("cpu_usage", {})
+            mem = sys.get("mem_usage", {}).get("mem")
             return {
                 "success": True,
-                "model": info.get("model"),
-                "firmware": info.get("firmware"),
-                "uptime_seconds": info.get("uptime"),
+                "model": fw.get("hardware_version") or fw.get("model"),
+                "firmware": fw.get("firmware_version"),
+                "uptime_seconds": locale_result.get("uptime"),
+                "cpu_percent": round(sum(cpu.values()) / len(cpu)) if cpu else None,
+                "mem_percent": mem,
             }
         except httpx.ConnectError:
-            return {"success": False, "error": "Cannot connect to ER605",
-                    "suggestion": f"Verify er605.host in config.json — tried {self.host}",
-                    "attempted": url}
+            return {
+                "success": False,
+                "error": "Cannot connect to ER605",
+                "suggestion": f"Verify er605.host in config.json — tried {self.host}",
+                "attempted": url,
+            }
         except Exception as e:
             return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
