@@ -129,7 +129,7 @@ class DecoClient:
         try:
             result = json.loads(self._aes_decrypt(raw["data"]))
             if result.get("error_code") == 0:
-                self._stok = result["stok"]
+                self._stok = result["result"]["stok"]
                 return True
         except Exception:
             pass
