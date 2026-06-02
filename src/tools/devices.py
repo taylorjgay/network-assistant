@@ -32,3 +32,46 @@ class DeviceInventory:
     def __init__(self, labels_path: Path, cfg=None):
         self._labels_path = labels_path
         self._cfg = cfg
+
+    def label_device(self, mac: str, label: str) -> dict:
+        normalized = _normalize_mac(mac)
+        if normalized is None:
+            return {
+                "success": False,
+                "error": f"Invalid MAC address format '{mac}'",
+                "suggestion": "Use format AA:BB:CC:DD:EE:FF",
+            }
+        labels = self._load_labels()
+        labels[normalized] = label
+        self._save_labels(labels)
+        return {"success": True, "mac": normalized, "label": label}
+
+    def remove_device_label(self, mac: str) -> dict:
+        normalized = _normalize_mac(mac)
+        if normalized is None:
+            return {
+                "success": False,
+                "error": f"Invalid MAC address format '{mac}'",
+                "suggestion": "Use format AA:BB:CC:DD:EE:FF",
+            }
+        labels = self._load_labels()
+        if normalized not in labels:
+            return {
+                "success": False,
+                "error": f"No label found for {normalized}",
+                "suggestion": "Use label_device to add a label first",
+            }
+        del labels[normalized]
+        self._save_labels(labels)
+        return {"success": True, "mac": normalized}
+
+    def _load_labels(self) -> dict:
+        if not self._labels_path.exists():
+            return {}
+        try:
+            return json.loads(self._labels_path.read_text())
+        except Exception:
+            return {}
+
+    def _save_labels(self, labels: dict) -> None:
+        self._labels_path.write_text(json.dumps(labels, indent=2))
