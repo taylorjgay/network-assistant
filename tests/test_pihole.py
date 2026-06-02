@@ -437,3 +437,79 @@ def test_update_gravity_http_error(client):
     result = client.update_gravity()
     assert result["success"] is False
     assert "suggestion" in result
+
+
+# --- get_query_trends ---
+
+HISTORY_URL = "http://192.168.0.10/api/history"
+
+
+@respx.mock
+def test_get_query_trends_success(client):
+    _mock_auth()
+    # 6 points per hour × 2 hours at 10-min intervals
+    history = []
+    for i in range(6):
+        history.append({"timestamp": 1717200000 + i * 600, "total": 20, "blocked": 5})
+    for i in range(6):
+        history.append({"timestamp": 1717203600 + i * 600, "total": 30, "blocked": 10})
+    respx.get(HISTORY_URL).mock(return_value=httpx.Response(200, json={"history": history}))
+
+    result = client.get_query_trends()
+
+    assert result["success"] is True
+    assert len(result["hours"]) == 2
+    assert result["hours"][0]["total"] == 120    # 6 × 20
+    assert result["hours"][0]["blocked"] == 30   # 6 × 5
+    assert result["hours"][0]["block_pct"] == 25.0
+    assert result["hours"][1]["total"] == 180    # 6 × 30
+    assert result["summary"]["total_24h"] == 300
+    assert result["summary"]["blocked_24h"] == 90
+    assert result["summary"]["avg_per_hour"] == 150.0
+
+
+@respx.mock
+def test_get_query_trends_spike_detected(client):
+    _mock_auth()
+    # avg = (10 + 200 + 10) / 3 ≈ 73.3; spike threshold = 146.7; hour 2 (200) exceeds it
+    history = [
+        {"timestamp": 1717200000, "total": 10, "blocked": 1},
+        {"timestamp": 1717203600, "total": 200, "blocked": 50},
+        {"timestamp": 1717207200, "total": 10, "blocked": 1},
+    ]
+    respx.get(HISTORY_URL).mock(return_value=httpx.Response(200, json={"history": history}))
+
+    result = client.get_query_trends()
+
+    assert result["success"] is True
+    spike_hour = next(h for h in result["hours"] if h["is_spike"])
+    assert spike_hour["total"] == 200
+    assert len(result["summary"]["spike_hours"]) == 1
+    non_spikes = [h for h in result["hours"] if not h["is_spike"]]
+    assert len(non_spikes) == 2
+
+
+@respx.mock
+def test_get_query_trends_empty_history(client):
+    _mock_auth()
+    respx.get(HISTORY_URL).mock(return_value=httpx.Response(200, json={"history": []}))
+
+    result = client.get_query_trends()
+
+    assert result["success"] is True
+    assert result["hours"] == []
+    assert result["summary"]["total_24h"] == 0
+    assert result["summary"]["blocked_24h"] == 0
+    assert result["summary"]["spike_hours"] == []
+
+
+@respx.mock
+def test_get_query_trends_auth_failure(client):
+    respx.post("http://192.168.0.10/api/auth").mock(
+        return_value=httpx.Response(200, json={"session": {"valid": False}})
+    )
+
+    result = client.get_query_trends()
+
+    assert result["success"] is False
+    assert "Authentication failed" in result["error"]

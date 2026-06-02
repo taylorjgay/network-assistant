@@ -1,3 +1,5 @@
+from collections import defaultdict
+from datetime import datetime, timezone
 import httpx
 
 _BLOCKED_STATUSES = {1, 4, 5, 6, 10, 12, 13, 14, 15}
@@ -376,5 +378,67 @@ class PiholeClient:
         except httpx.ConnectError as e:
             return {"success": False, "error": str(e),
                     "suggestion": f"Cannot reach Pi-hole at {self.host}", "attempted": url}
+        except Exception as e:
+            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+
+    def get_query_trends(self) -> dict:
+        url = f"{self._base}/history"
+        try:
+            with httpx.Client(timeout=10) as client:
+                sid = self._get_sid(client)
+                if sid is None:
+                    return {"success": False, "error": "Authentication failed",
+                            "suggestion": "Check api_token in config.json", "attempted": url}
+                resp = client.get(url, headers={"X-FTL-SID": sid})
+                resp.raise_for_status()
+                history = resp.json().get("history", [])
+
+            buckets: dict = defaultdict(lambda: {"total": 0, "blocked": 0})
+            for point in history:
+                hour_ts = (point["timestamp"] // 3600) * 3600
+                buckets[hour_ts]["total"] += point.get("total", 0)
+                buckets[hour_ts]["blocked"] += point.get("blocked", 0)
+
+            total_24h = 0
+            blocked_24h = 0
+            hours = []
+            for ts in sorted(buckets):
+                t = buckets[ts]["total"]
+                b = buckets[ts]["blocked"]
+                total_24h += t
+                blocked_24h += b
+                hours.append({
+                    "hour": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(),
+                    "total": t,
+                    "blocked": b,
+                    "block_pct": round(b / t * 100, 1) if t > 0 else 0.0,
+                    "is_spike": False,
+                })
+
+            avg_per_hour = round(total_24h / len(hours), 1) if hours else 0.0
+            spike_hours = []
+            for h in hours:
+                if h["total"] > 2 * avg_per_hour:
+                    h["is_spike"] = True
+                    spike_hours.append(h["hour"])
+
+            return {
+                "success": True,
+                "hours": hours,
+                "summary": {
+                    "total_24h": total_24h,
+                    "blocked_24h": blocked_24h,
+                    "block_pct_24h": round(blocked_24h / total_24h * 100, 1) if total_24h > 0 else 0.0,
+                    "avg_per_hour": avg_per_hour,
+                    "spike_hours": spike_hours,
+                },
+            }
+        except httpx.HTTPStatusError as e:
+            return {"success": False, "error": f"HTTP {e.response.status_code}",
+                    "suggestion": "Check Pi-hole host in config.json", "attempted": url}
+        except httpx.ConnectError as e:
+            return {"success": False, "error": str(e),
+                    "suggestion": f"Cannot reach Pi-hole at {self.host} — verify IP in config.json",
+                    "attempted": url}
         except Exception as e:
             return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
