@@ -98,3 +98,69 @@ class WANHealthClient:
             }
         except Exception as e:
             return {"success": False, "error": str(e), "suggestion": "Check ER605 connectivity at the configured host", "attempted": url}
+
+    def compare_wan_health(self) -> dict:
+        url = self._kwargs["host"]
+        policy = self._er605().get_wan_policy()
+        if not policy["success"]:
+            return policy
+        original = policy.get("primary_wan", "auto")
+
+        wan1_probe = None
+        wan2_probe = None
+        error = None
+        restored = False
+        try:
+            r = self._er605().set_wan_priority("WAN1")
+            if not r["success"]:
+                error = r
+            else:
+                time.sleep(2)
+                raw = _probe()
+                wan1_probe = {
+                    "avg_latency_ms": raw["avg_latency_ms"],
+                    "packet_loss_pct": raw["packet_loss_pct"],
+                    "degraded": _is_degraded(raw),
+                }
+                r = self._er605().set_wan_priority("WAN2")
+                if not r["success"]:
+                    error = r
+                else:
+                    time.sleep(2)
+                    raw = _probe()
+                    wan2_probe = {
+                        "avg_latency_ms": raw["avg_latency_ms"],
+                        "packet_loss_pct": raw["packet_loss_pct"],
+                        "degraded": _is_degraded(raw),
+                    }
+        except Exception as e:
+            error = {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+        finally:
+            r = self._er605().set_wan_priority(original)
+            restored = r.get("success", False)
+
+        if error:
+            return {**error, "restored": restored}
+
+        w1_ok = wan1_probe is not None and not wan1_probe["degraded"]
+        w2_ok = wan2_probe is not None and not wan2_probe["degraded"]
+        if w1_ok and w2_ok:
+            l1 = wan1_probe["avg_latency_ms"] or 999
+            l2 = wan2_probe["avg_latency_ms"] or 999
+            rec = ("Both WANs healthy — WAN1 has lower latency" if l1 <= l2
+                   else "Both WANs healthy — WAN2 has lower latency")
+        elif w1_ok:
+            rec = "WAN1 is healthier — stay on current configuration"
+        elif w2_ok:
+            rec = "WAN2 is healthier — consider switching primary WAN"
+        else:
+            rec = "Both WANs degraded — check upstream connections"
+
+        return {
+            "success": True,
+            "original_policy": original,
+            "wan1_probe": wan1_probe,
+            "wan2_probe": wan2_probe,
+            "recommendation": rec,
+            "restored": restored,
+        }
