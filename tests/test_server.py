@@ -3,6 +3,7 @@ import src.server as server_module
 EXPECTED_TOOLS = [
     "get_wan_status", "get_router_info",
     "get_wan_policy", "set_wan_priority",
+    "get_wan_health", "compare_wan_health",
     "get_port_forwards", "add_port_forward", "remove_port_forward",
     "get_firewall_rules", "add_firewall_rule", "remove_firewall_rule",
     "get_network_devices", "label_device", "remove_device_label",

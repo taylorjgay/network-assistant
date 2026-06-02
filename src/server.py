@@ -13,6 +13,7 @@ from src.tools.er605 import ER605Client
 from src.tools.deco import DecoClient
 from src.tools.pihole import PiholeClient
 from src.tools.devices import DeviceInventory
+from src.tools.wan_health import WANHealthClient
 
 mcp = FastMCP("NetworkAssistant")
 
@@ -20,6 +21,7 @@ _config_path = Path(__file__).parent.parent / "config.json"
 _cfg = load_config(_config_path) if _config_path.exists() else None
 
 _er605 = ER605Client(**vars(_cfg.er605)) if _cfg else None
+_wan_health = WANHealthClient(**vars(_cfg.er605)) if _cfg else None
 _deco = DecoClient(**vars(_cfg.deco)) if _cfg else None
 _devices_labels_path = Path(__file__).parent.parent / "devices.json"
 _devices = DeviceInventory(labels_path=_devices_labels_path, cfg=_cfg)
@@ -51,6 +53,22 @@ def get_wan_policy() -> dict:
 def set_wan_priority(primary_wan: str, dry_run: bool = False) -> dict:
     """Force ER605 to use a specific WAN. primary_wan: 'WAN1', 'WAN2', or 'auto' (restore automatic failover). dry_run=True shows what would be sent without applying it."""
     return _er605.set_wan_priority(primary_wan, dry_run=dry_run) if _er605 else _NO_CONFIG
+
+
+@mcp.tool()
+def get_wan_health() -> dict:
+    """Get WAN health: per-interface link status for both WANs plus active latency/packet-loss probe. Sets degraded=True when packet loss >5% or latency >150ms."""
+    if not _wan_health:
+        return _NO_CONFIG
+    return _wan_health.get_wan_health()
+
+
+@mcp.tool()
+def compare_wan_health() -> dict:
+    """Compare WAN1 vs WAN2 health by briefly routing through each. WARNING: temporarily disrupts new outbound connections for ~4 seconds total. Only call when investigating suspected WAN degradation."""
+    if not _wan_health:
+        return _NO_CONFIG
+    return _wan_health.compare_wan_health()
 
 
 @mcp.tool()
