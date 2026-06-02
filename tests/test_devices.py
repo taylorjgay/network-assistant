@@ -145,3 +145,23 @@ def test_parse_arp_cache_empty(tmp_path):
         devices = inv._parse_arp_cache()
 
     assert devices == []
+
+
+# --- _lookup_vendor ---
+
+def test_lookup_vendor_found(tmp_path):
+    inv = DeviceInventory(labels_path=tmp_path / "devices.json", cfg=_cfg())
+
+    with patch("src.tools.devices._mac_lookup.lookup", return_value="Microsoft Corporation"):
+        vendor = inv._lookup_vendor("aa:bb:cc:dd:ee:ff")
+
+    assert vendor == "Microsoft Corporation"
+
+
+def test_lookup_vendor_not_found(tmp_path):
+    inv = DeviceInventory(labels_path=tmp_path / "devices.json", cfg=_cfg())
+
+    with patch("src.tools.devices._mac_lookup.lookup", side_effect=Exception("not found")):
+        vendor = inv._lookup_vendor("aa:bb:cc:dd:ee:ff")
+
+    assert vendor is None

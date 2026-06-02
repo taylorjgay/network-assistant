@@ -90,3 +90,9 @@ class DeviceInventory:
             return devices
         except Exception:
             return []
+
+    def _lookup_vendor(self, mac: str) -> Optional[str]:
+        try:
+            return _mac_lookup.lookup(mac)
+        except Exception:
+            return None
