@@ -134,10 +134,13 @@ class WANHealthClient:
                         "degraded": _is_degraded(raw),
                     }
         except Exception as e:
-            error = {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+            error = {"success": False, "error": str(e), "suggestion": "Check ER605 connectivity at the configured host", "attempted": url}
         finally:
-            r = self._er605().set_wan_priority(original)
-            restored = r.get("success", False)
+            try:
+                r = self._er605().set_wan_priority(original)
+                restored = r.get("success", False)
+            except Exception:
+                restored = False
 
         if error:
             return {**error, "restored": restored}
