@@ -12,6 +12,7 @@ from src.tools.diagnostics import (
 from src.tools.er605 import ER605Client
 from src.tools.deco import DecoClient
 from src.tools.pihole import PiholeClient
+from src.tools.devices import DeviceInventory
 
 mcp = FastMCP("NetworkAssistant")
 
@@ -20,6 +21,8 @@ _cfg = load_config(_config_path) if _config_path.exists() else None
 
 _er605 = ER605Client(**vars(_cfg.er605)) if _cfg else None
 _deco = DecoClient(**vars(_cfg.deco)) if _cfg else None
+_devices_labels_path = Path(__file__).parent.parent / "devices.json"
+_devices = DeviceInventory(labels_path=_devices_labels_path, cfg=_cfg)
 
 _NO_CONFIG = {"success": False, "error": "config.json not found",
               "suggestion": "Copy config.example.json to config.json and fill in your device details",
@@ -98,6 +101,24 @@ def add_firewall_rule(
 def remove_firewall_rule(rule_id: str, dry_run: bool = False) -> dict:
     """Remove an ER605 firewall ACL rule by ID (get IDs from get_firewall_rules). dry_run=True shows payload without applying."""
     return _er605.remove_firewall_rule(rule_id, dry_run=dry_run) if _er605 else _NO_CONFIG
+
+
+@mcp.tool()
+def get_network_devices(deep_scan: bool = False) -> dict:
+    """Get all devices on 192.168.0.x: IP, MAC, label, hostname, vendor, Pi-hole stats, Deco node info. deep_scan=True pings all 254 hosts first (~15s) to find idle devices."""
+    return _devices.get_network_devices(deep_scan=deep_scan)
+
+
+@mcp.tool()
+def label_device(mac: str, label: str) -> dict:
+    """Assign a friendly name to a device by MAC address (e.g. 'AA:BB:CC:DD:EE:FF', 'Xbox Series X'). Labels persist in devices.json."""
+    return _devices.label_device(mac, label)
+
+
+@mcp.tool()
+def remove_device_label(mac: str) -> dict:
+    """Remove a device label by MAC address. Use get_network_devices to find MACs."""
+    return _devices.remove_device_label(mac)
 
 
 @mcp.tool()

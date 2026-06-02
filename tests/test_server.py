@@ -5,6 +5,7 @@ EXPECTED_TOOLS = [
     "get_wan_policy", "set_wan_priority",
     "get_port_forwards", "add_port_forward", "remove_port_forward",
     "get_firewall_rules", "add_firewall_rule", "remove_firewall_rule",
+    "get_network_devices", "label_device", "remove_device_label",
     "get_connected_clients", "get_mesh_health",
     "get_pihole_stats", "get_query_log", "get_top_domains", "get_top_clients",
     "get_domain_lists", "get_clients", "get_pihole_system", "add_domain",
