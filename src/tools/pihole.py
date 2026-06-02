@@ -235,7 +235,7 @@ class PiholeClient:
                 "cpu_load_1m": load_raw[0] if len(load_raw) > 0 else 0,
                 "cpu_load_5m": load_raw[1] if len(load_raw) > 1 else 0,
                 "cpu_load_15m": load_raw[2] if len(load_raw) > 2 else 0,
-                "ram_total_mb": round(mem.get("total", 0) / 1_000_000),
+                "ram_total_mb": round(mem.get("total", 0) / 1_000_000),  # API returns bytes; using SI MB
                 "ram_used_mb": round(mem.get("used", 0) / 1_000_000),
                 "ram_free_mb": round(mem.get("free", 0) / 1_000_000),
             }
