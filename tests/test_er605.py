@@ -191,3 +191,53 @@ def test_api_set_sends_set_method(client):
 
     assert captured["data"]["method"] == "set"
     assert captured["data"]["params"] == {"key": "val"}
+
+
+WAN_POLICY_URL = re.compile(
+    rf"{re.escape(BASE)}/cgi-bin/luci/;stok={STOK}/admin/network\?form=wan_load_balance"
+)
+
+
+@respx.mock
+def test_get_wan_policy_success(client):
+    respx.post(WAN_POLICY_URL).mock(return_value=httpx.Response(200, json={
+        "id": 1,
+        "result": {
+            "mode": "failover",
+            "primary_wan": "WAN1",
+            "health_check": {"interval": 30, "retry": 3, "target": "8.8.8.8"},
+        },
+        "error_code": "0",
+    }))
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.get_wan_policy()
+
+    assert result["success"] is True
+    assert result["mode"] == "failover"
+    assert result["primary_wan"] == "WAN1"
+    assert result["health_check"]["interval"] == 30
+
+
+@respx.mock
+def test_get_wan_policy_error_1014(client):
+    respx.post(WAN_POLICY_URL).mock(return_value=httpx.Response(200, json={
+        "error_code": "1014", "result": {}
+    }))
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.get_wan_policy()
+
+    assert result["success"] is False
+    assert "1014" in result["error"]
+    assert "standalone" in result["suggestion"]
+
+
+@respx.mock
+def test_get_wan_policy_auth_failure(client):
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _login_fail_response("700")]
+
+    result = client.get_wan_policy()
+
+    assert result["success"] is False
+    assert "authentication failed" in result["error"]

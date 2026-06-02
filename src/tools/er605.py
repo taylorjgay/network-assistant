@@ -98,6 +98,46 @@ class ER605Client:
         url = f"{self._base}/cgi-bin/luci/;stok={stok}/admin/{resource}?form={form}"
         return self._post_form(client, url, {"method": "del", "params": params})
 
+    def get_wan_policy(self) -> dict:
+        url = self._base
+        try:
+            with httpx.Client(verify=False, timeout=10) as client:
+                stok, err = self._login(client)
+                if stok is None:
+                    return {
+                        "success": False,
+                        "error": f"ER605 authentication failed: {err}",
+                        "suggestion": "Check er605.username and er605.password in config.json",
+                        "attempted": url,
+                    }
+                data = self._api(client, stok, "network", "wan_load_balance")
+
+            if data.get("error_code") != "0":
+                return {
+                    "success": False,
+                    "error": f"ER605 WAN policy endpoint error {data.get('error_code')}",
+                    "suggestion": "This endpoint may not be accessible on standalone ER605 firmware 2.x. Try the Web UI instead.",
+                    "attempted": url,
+                    "raw": data,
+                }
+
+            result = data.get("result", {})
+            return {
+                "success": True,
+                "mode": result.get("mode"),
+                "primary_wan": result.get("primary_wan"),
+                "health_check": result.get("health_check", {}),
+            }
+        except httpx.ConnectError:
+            return {
+                "success": False,
+                "error": "Cannot connect to ER605",
+                "suggestion": f"Verify er605.host in config.json — tried {self.host}",
+                "attempted": url,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+
     def get_wan_status(self) -> dict:
         url = self._base
         try:

@@ -39,6 +39,12 @@ def get_router_info() -> dict:
 
 
 @mcp.tool()
+def get_wan_policy() -> dict:
+    """Get ER605 WAN failover policy: mode (failover/load_balance), primary WAN, health check settings."""
+    return _er605.get_wan_policy() if _er605 else _NO_CONFIG
+
+
+@mcp.tool()
 def get_connected_clients() -> dict:
     """Get all devices on the Deco mesh: hostname, IP, MAC, which node, band."""
     if not _cfg:
