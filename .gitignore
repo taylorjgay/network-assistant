@@ -10,3 +10,4 @@ dist/
 .env
 build/
 .claude/settings.local.json
+devices.json
