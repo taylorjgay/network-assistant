@@ -208,3 +208,44 @@ def test_enrich_pihole_unavailable(tmp_path):
     # Fields remain None — no crash
     assert devices["192.168.0.50"]["hostname"] is None
     assert devices["192.168.0.50"]["pihole_queries_today"] is None
+
+
+# --- _enrich_deco ---
+
+def test_enrich_deco_marks_deco_nodes(tmp_path):
+    inv = DeviceInventory(labels_path=tmp_path / "devices.json", cfg=_cfg())
+    devices = {
+        "192.168.0.100": {
+            "ip": "192.168.0.100", "mac": "aa:bb:cc:dd:ee:ff",
+            "deco_node": None, "deco_signal_dbm": None, "connection_type": None,
+        }
+    }
+
+    with patch("src.tools.devices.DecoClient") as MockDeco:
+        MockDeco.return_value.get_mesh_health.return_value = {
+            "success": True,
+            "nodes": [
+                {"ip": "192.168.0.100", "nickname": "Office", "signal_level_dbm": None, "is_primary": True}
+            ],
+        }
+        inv._enrich_deco(devices)
+
+    assert devices["192.168.0.100"]["deco_node"] == "Office"
+    assert devices["192.168.0.100"]["connection_type"] == "deco_node"
+
+
+def test_enrich_deco_unavailable(tmp_path):
+    inv = DeviceInventory(labels_path=tmp_path / "devices.json", cfg=_cfg())
+    devices = {
+        "192.168.0.100": {
+            "ip": "192.168.0.100", "mac": "aa:bb:cc:dd:ee:ff",
+            "deco_node": None, "deco_signal_dbm": None, "connection_type": None,
+        }
+    }
+
+    with patch("src.tools.devices.DecoClient") as MockDeco:
+        MockDeco.return_value.get_mesh_health.return_value = {"success": False, "error": "unreachable"}
+        inv._enrich_deco(devices)
+
+    # Fields remain None — no crash
+    assert devices["192.168.0.100"]["deco_node"] is None

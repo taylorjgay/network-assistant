@@ -119,3 +119,19 @@ class DeviceInventory:
                     ).isoformat()
         except Exception:
             pass
+
+    def _enrich_deco(self, devices: dict) -> None:
+        if self._cfg is None:
+            return
+        try:
+            result = DecoClient(**vars(self._cfg.deco)).get_mesh_health()
+            if not result.get("success"):
+                return
+            for node in result.get("nodes", []):
+                ip = node.get("ip")
+                if ip and ip in devices:
+                    devices[ip]["deco_node"] = node.get("nickname")
+                    devices[ip]["deco_signal_dbm"] = node.get("signal_level_dbm")
+                    devices[ip]["connection_type"] = "deco_node"
+        except Exception:
+            pass
