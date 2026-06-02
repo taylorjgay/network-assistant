@@ -108,6 +108,14 @@ def get_clients() -> dict:
 
 
 @mcp.tool()
+def get_pihole_system() -> dict:
+    """Get Pi-hole system info: CPU load, RAM usage, uptime, hostname."""
+    if not _cfg:
+        return _NO_CONFIG
+    return PiholeClient(**vars(_cfg.pihole)).get_pihole_system()
+
+
+@mcp.tool()
 def test_dns_resolution(hostname: str, dns_server: str | None = None) -> dict:
     """Resolve a hostname and report which DNS server answered and the resolved IPs.
     Optionally specify dns_server (e.g. '8.8.8.8') to bypass Pi-hole."""

@@ -213,6 +213,41 @@ class PiholeClient:
         except Exception as e:
             return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
 
+    def get_pihole_system(self) -> dict:
+        """Get Pi-hole system info: CPU load, RAM usage, uptime, hostname."""
+        url = f"{self._base}/info/system"
+        try:
+            with httpx.Client(timeout=10) as c:
+                sid = self._get_sid(c)
+                if sid is None:
+                    return {"success": False, "error": "Authentication failed",
+                            "suggestion": "Check api_token in config.json", "attempted": url}
+                resp = c.get(url, headers={"X-FTL-SID": sid})
+                resp.raise_for_status()
+                sys_data = resp.json().get("system", {})
+            cpu = sys_data.get("cpu", {})
+            mem = sys_data.get("memory", {}).get("ram", {})
+            load_raw = cpu.get("load", {}).get("raw", [0, 0, 0])
+            return {
+                "success": True,
+                "hostname": sys_data.get("hostname", ""),
+                "uptime_seconds": sys_data.get("uptime", 0),
+                "cpu_load_1m": load_raw[0] if len(load_raw) > 0 else 0,
+                "cpu_load_5m": load_raw[1] if len(load_raw) > 1 else 0,
+                "cpu_load_15m": load_raw[2] if len(load_raw) > 2 else 0,
+                "ram_total_mb": round(mem.get("total", 0) / 1_000_000),
+                "ram_used_mb": round(mem.get("used", 0) / 1_000_000),
+                "ram_free_mb": round(mem.get("free", 0) / 1_000_000),
+            }
+        except httpx.HTTPStatusError as e:
+            return {"success": False, "error": f"HTTP {e.response.status_code}",
+                    "suggestion": "Check Pi-hole host in config.json", "attempted": url}
+        except httpx.ConnectError as e:
+            return {"success": False, "error": str(e),
+                    "suggestion": f"Cannot reach Pi-hole at {self.host}", "attempted": url}
+        except Exception as e:
+            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+
     def get_clients(self) -> dict:
         url = f"{self._base}/clients"
         try:

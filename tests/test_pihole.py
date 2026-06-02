@@ -289,3 +289,34 @@ def test_get_clients_connect_error(client):
     result = client.get_clients()
     assert result["success"] is False
     assert "suggestion" in result
+
+
+@respx.mock
+def test_get_pihole_system(client):
+    _mock_auth()
+    respx.get("http://192.168.0.10/api/info/system").mock(
+        return_value=httpx.Response(200, json={"system": {
+            "cpu": {"nprocs": 4, "load": {"raw": [0.12, 0.08, 0.05]}},
+            "memory": {"ram": {"total": 4000000000, "used": 800000000, "free": 3200000000}},
+            "uptime": 86400,
+            "hostname": "pihole",
+        }})
+    )
+    result = client.get_pihole_system()
+    assert result["success"] is True
+    assert result["hostname"] == "pihole"
+    assert result["uptime_seconds"] == 86400
+    assert result["cpu_load_1m"] == 0.12
+    assert "ram_used_mb" in result
+    assert "ram_total_mb" in result
+
+
+@respx.mock
+def test_get_pihole_system_http_error(client):
+    _mock_auth()
+    respx.get("http://192.168.0.10/api/info/system").mock(
+        return_value=httpx.Response(500)
+    )
+    result = client.get_pihole_system()
+    assert result["success"] is False
+    assert "suggestion" in result
