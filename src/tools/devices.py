@@ -75,3 +75,18 @@ class DeviceInventory:
 
     def _save_labels(self, labels: dict) -> None:
         self._labels_path.write_text(json.dumps(labels, indent=2))
+
+    def _parse_arp_cache(self) -> list[dict]:
+        try:
+            result = subprocess.run(['arp', '-a'], capture_output=True, text=True, timeout=5)
+            devices = []
+            for line in result.stdout.splitlines():
+                m = re.search(
+                    r'\((\d+\.\d+\.\d+\.\d+)\) at ((?:[0-9a-f]{1,2}:){5}[0-9a-f]{1,2})\b',
+                    line
+                )
+                if m:
+                    devices.append({"ip": m.group(1), "mac": m.group(2)})
+            return devices
+        except Exception:
+            return []
