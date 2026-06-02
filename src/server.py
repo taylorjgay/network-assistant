@@ -45,6 +45,12 @@ def get_wan_policy() -> dict:
 
 
 @mcp.tool()
+def set_wan_priority(primary_wan: str, dry_run: bool = False) -> dict:
+    """Force ER605 to use a specific WAN. primary_wan: 'WAN1', 'WAN2', or 'auto' (restore automatic failover). dry_run=True shows what would be sent without applying it."""
+    return _er605.set_wan_priority(primary_wan, dry_run=dry_run) if _er605 else _NO_CONFIG
+
+
+@mcp.tool()
 def get_connected_clients() -> dict:
     """Get all devices on the Deco mesh: hostname, IP, MAC, which node, band."""
     if not _cfg:

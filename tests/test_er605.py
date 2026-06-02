@@ -241,3 +241,51 @@ def test_get_wan_policy_auth_failure(client):
 
     assert result["success"] is False
     assert "authentication failed" in result["error"]
+
+
+@respx.mock
+def test_set_wan_priority_success(client):
+    respx.post(WAN_POLICY_URL).mock(return_value=httpx.Response(200, json={
+        "error_code": "0", "result": {}
+    }))
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.set_wan_priority("WAN2")
+
+    assert result["success"] is True
+    assert result["primary_wan"] == "WAN2"
+
+
+@respx.mock
+def test_set_wan_priority_dry_run(client):
+    # dry_run must NOT call the write endpoint — respx will error if it does
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.set_wan_priority("WAN2", dry_run=True)
+
+    assert result["success"] is True
+    assert result["dry_run"] is True
+    assert result["would_send"]["params"]["primary_wan"] == "WAN2"
+    assert result["would_send"]["method"] == "set"
+
+
+def test_set_wan_priority_invalid_wan(client):
+    result = client.set_wan_priority("WAN3")
+
+    assert result["success"] is False
+    assert "Invalid" in result["error"]
+    assert "WAN1" in result["suggestion"]
+
+
+@respx.mock
+def test_set_wan_priority_error_1014(client):
+    respx.post(WAN_POLICY_URL).mock(return_value=httpx.Response(200, json={
+        "error_code": "1014", "result": {}
+    }))
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.set_wan_priority("WAN1")
+
+    assert result["success"] is False
+    assert "1014" in result["error"]
+    assert "standalone" in result["suggestion"]

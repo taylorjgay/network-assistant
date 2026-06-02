@@ -138,6 +138,59 @@ class ER605Client:
         except Exception as e:
             return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
 
+    def set_wan_priority(self, primary_wan: str, dry_run: bool = False) -> dict:
+        url = self._base
+        if primary_wan not in ("WAN1", "WAN2", "auto"):
+            return {
+                "success": False,
+                "error": f"Invalid primary_wan '{primary_wan}'",
+                "suggestion": "Use 'WAN1', 'WAN2', or 'auto' (restore automatic failover)",
+                "attempted": url,
+            }
+        params = {"primary_wan": primary_wan}
+        try:
+            with httpx.Client(verify=False, timeout=10) as client:
+                stok, err = self._login(client)
+                if stok is None:
+                    return {
+                        "success": False,
+                        "error": f"ER605 authentication failed: {err}",
+                        "suggestion": "Check er605.username and er605.password in config.json",
+                        "attempted": url,
+                    }
+                if dry_run:
+                    return {
+                        "success": True,
+                        "dry_run": True,
+                        "would_send": {
+                            "resource": "network",
+                            "form": "wan_load_balance",
+                            "method": "set",
+                            "params": params,
+                        },
+                    }
+                data = self._api_set(client, stok, "network", "wan_load_balance", params)
+
+            if data.get("error_code") != "0":
+                return {
+                    "success": False,
+                    "error": f"ER605 set WAN priority error {data.get('error_code')}",
+                    "suggestion": "This endpoint may not be accessible on standalone ER605 firmware 2.x. Try the Web UI instead.",
+                    "attempted": url,
+                    "raw": data,
+                }
+
+            return {"success": True, "primary_wan": primary_wan}
+        except httpx.ConnectError:
+            return {
+                "success": False,
+                "error": "Cannot connect to ER605",
+                "suggestion": f"Verify er605.host in config.json — tried {self.host}",
+                "attempted": url,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+
     def get_wan_status(self) -> dict:
         url = self._base
         try:
