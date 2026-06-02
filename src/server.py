@@ -63,6 +63,19 @@ def get_pihole_stats() -> dict:
 
 
 @mcp.tool()
+def get_query_log(
+    blocked: bool | None = None,
+    domain: str | None = None,
+    client: str | None = None,
+    limit: int = 50,
+) -> dict:
+    """Get recent DNS query log. Filter by blocked=True for only blocked queries, domain or client for specific lookups."""
+    if not _cfg:
+        return _NO_CONFIG
+    return PiholeClient(**vars(_cfg.pihole)).get_query_log(blocked=blocked, domain=domain, client=client, limit=limit)
+
+
+@mcp.tool()
 def test_dns_resolution(hostname: str, dns_server: str | None = None) -> dict:
     """Resolve a hostname and report which DNS server answered and the resolved IPs.
     Optionally specify dns_server (e.g. '8.8.8.8') to bypass Pi-hole."""

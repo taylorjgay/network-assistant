@@ -124,3 +124,50 @@ def test_test_dns_resolution_auth_failure(client):
     assert result["success"] is False
     assert result["hostname"] == "google.com"
     assert "Authentication" in result["error"]
+
+
+@respx.mock
+def test_get_query_log_default(client):
+    _mock_auth()
+    respx.get("http://192.168.0.10/api/queries").mock(
+        return_value=httpx.Response(200, json={"queries": [
+            {"id": 1, "time": 1717300000.0, "type": "A", "domain": "example.com",
+             "client": {"ip": "192.168.0.50", "name": "mypc"}, "status": 2,
+             "reply": {"type": "IP", "time": 1.2}},
+            {"id": 2, "time": 1717300010.0, "type": "A", "domain": "ads.bad.com",
+             "client": {"ip": "192.168.0.51", "name": "phone"}, "status": 1,
+             "reply": {"type": "NXDOMAIN", "time": 0.0}},
+        ]})
+    )
+    result = client.get_query_log()
+    assert result["success"] is True
+    assert len(result["queries"]) == 2
+    assert result["queries"][0]["domain"] == "example.com"
+    assert result["queries"][0]["status"] == "forwarded"
+    assert result["queries"][1]["status"] == "blocked"
+    assert result["queries"][1]["client"] == "192.168.0.51"
+
+
+@respx.mock
+def test_get_query_log_blocked_filter(client):
+    _mock_auth()
+    respx.get("http://192.168.0.10/api/queries").mock(
+        return_value=httpx.Response(200, json={"queries": [
+            {"id": 3, "time": 1717300020.0, "type": "A", "domain": "tracker.com",
+             "client": {"ip": "192.168.0.50", "name": ""}, "status": 1,
+             "reply": {"type": "NXDOMAIN", "time": 0.0}},
+        ]})
+    )
+    result = client.get_query_log(blocked=True)
+    assert result["success"] is True
+    assert len(result["queries"]) == 1
+
+
+@respx.mock
+def test_get_query_log_connect_error(client):
+    respx.post("http://192.168.0.10/api/auth").mock(
+        side_effect=httpx.ConnectError("refused")
+    )
+    result = client.get_query_log()
+    assert result["success"] is False
+    assert "suggestion" in result
