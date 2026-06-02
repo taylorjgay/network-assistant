@@ -165,3 +165,29 @@ def test_uptime_used_in_password_encryption(client):
 
     expected = _rsa_encrypt("secret_99999", MODULUS_HEX)
     assert expected in captured.get("body", "")
+
+
+@respx.mock
+def test_api_set_sends_set_method(client):
+    """_api_set must send method=set with params in the payload."""
+    import json
+    import urllib.parse
+
+    captured = {}
+
+    def capture(request):
+        body = request.read().decode()
+        parsed = urllib.parse.parse_qs(body)
+        captured["data"] = json.loads(parsed["data"][0])
+        return httpx.Response(200, json={"error_code": "0", "result": {}})
+
+    set_url = f"{BASE}/cgi-bin/luci/;stok={STOK}/admin/network?form=test_form"
+    respx.post(set_url).mock(side_effect=capture)
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    with httpx.Client(verify=False) as c:
+        stok, _ = client._login(c)
+        client._api_set(c, stok, "network", "test_form", {"key": "val"})
+
+    assert captured["data"]["method"] == "set"
+    assert captured["data"]["params"] == {"key": "val"}

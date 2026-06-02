@@ -86,6 +86,18 @@ class ER605Client:
         url = f"{self._base}/cgi-bin/luci/;stok={stok}/admin/{resource}?form={form}"
         return self._post_form(client, url, {"method": "get"})
 
+    def _api_set(self, client: httpx.Client, stok: str, resource: str, form: str, params: dict) -> dict:
+        url = f"{self._base}/cgi-bin/luci/;stok={stok}/admin/{resource}?form={form}"
+        return self._post_form(client, url, {"method": "set", "params": params})
+
+    def _api_add(self, client: httpx.Client, stok: str, resource: str, form: str, params: dict) -> dict:
+        url = f"{self._base}/cgi-bin/luci/;stok={stok}/admin/{resource}?form={form}"
+        return self._post_form(client, url, {"method": "add", "params": params})
+
+    def _api_del(self, client: httpx.Client, stok: str, resource: str, form: str, params: dict) -> dict:
+        url = f"{self._base}/cgi-bin/luci/;stok={stok}/admin/{resource}?form={form}"
+        return self._post_form(client, url, {"method": "del", "params": params})
+
     def get_wan_status(self) -> dict:
         url = self._base
         try:
