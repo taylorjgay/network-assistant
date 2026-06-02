@@ -113,3 +113,14 @@ def test_test_dns_resolution_is_blocked(client):
     assert result["success"] is True
     assert result["is_recently_blocked"] is True
     assert result["recent_blocked"] == 1
+
+
+@respx.mock
+def test_test_dns_resolution_auth_failure(client):
+    respx.post("http://192.168.0.10/api/auth").mock(
+        return_value=httpx.Response(200, json={"session": {"valid": False}})
+    )
+    result = client.test_dns_resolution("google.com")
+    assert result["success"] is False
+    assert result["hostname"] == "google.com"
+    assert "Authentication" in result["error"]

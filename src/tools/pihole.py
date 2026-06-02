@@ -30,7 +30,8 @@ class PiholeClient:
                     f"{self._base}/dns/blocking", headers={"X-FTL-SID": sid}
                 )
                 blocking_resp.raise_for_status()
-            data = resp.json()
+                data = resp.json()
+                blocking_data = blocking_resp.json()
             queries = data.get("queries", {})
             gravity = data.get("gravity", {})
             return {
@@ -39,7 +40,7 @@ class PiholeClient:
                 "blocked_today": queries.get("blocked", 0),
                 "block_pct": round(float(queries.get("percent_blocked", 0.0)), 1),
                 "domains_blocked": gravity.get("domains_being_blocked", 0),
-                "enabled": blocking_resp.json().get("blocking") == "enabled",
+                "enabled": blocking_data.get("blocking") == "enabled",
             }
         except httpx.HTTPStatusError as e:
             return {"success": False, "error": f"HTTP {e.response.status_code}",
