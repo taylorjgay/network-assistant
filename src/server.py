@@ -240,6 +240,14 @@ def update_gravity() -> dict:
 
 
 @mcp.tool()
+def get_query_trends() -> dict:
+    """Get 24 hours of hourly DNS query volume (total + blocked per hour) and flag spike hours (>2× average)."""
+    if not _cfg:
+        return _NO_CONFIG
+    return PiholeClient(**vars(_cfg.pihole)).get_query_trends()
+
+
+@mcp.tool()
 def test_dns_resolution(hostname: str, dns_server: str | None = None) -> dict:
     """Resolve a hostname and report which DNS server answered and the resolved IPs.
     Optionally specify dns_server (e.g. '8.8.8.8') to bypass Pi-hole."""

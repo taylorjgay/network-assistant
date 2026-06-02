@@ -9,7 +9,7 @@ EXPECTED_TOOLS = [
     "get_connected_clients", "get_mesh_health",
     "get_pihole_stats", "get_query_log", "get_top_domains", "get_top_clients",
     "get_domain_lists", "get_clients", "get_pihole_system", "add_domain",
-    "remove_domain", "set_blocking", "update_gravity",
+    "remove_domain", "set_blocking", "update_gravity", "get_query_trends",
     "test_dns_resolution", "ping_host", "traceroute_host", "run_speedtest",
 ]
 
