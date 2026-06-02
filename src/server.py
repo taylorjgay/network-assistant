@@ -20,7 +20,6 @@ _cfg = load_config(_config_path) if _config_path.exists() else None
 
 _er605 = ER605Client(**vars(_cfg.er605)) if _cfg else None
 _deco = DecoClient(**vars(_cfg.deco)) if _cfg else None
-_pihole = PiholeClient(**vars(_cfg.pihole)) if _cfg else None
 
 _NO_CONFIG = {"success": False, "error": "config.json not found",
               "suggestion": "Copy config.example.json to config.json and fill in your device details",
@@ -58,7 +57,9 @@ def get_mesh_health() -> dict:
 @mcp.tool()
 def get_pihole_stats() -> dict:
     """Get Pi-hole query stats: total queries, blocked count, block percentage, enabled state."""
-    return _pihole.get_pihole_stats() if _pihole else _NO_CONFIG
+    if not _cfg:
+        return _NO_CONFIG
+    return PiholeClient(**vars(_cfg.pihole)).get_pihole_stats()
 
 
 @mcp.tool()
