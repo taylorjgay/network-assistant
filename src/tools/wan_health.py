@@ -1,5 +1,6 @@
 import re
 import subprocess
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from src.tools.er605 import ER605Client
@@ -38,7 +39,7 @@ def _probe() -> dict:
     avg_latency = round(sum(valid) / len(valid), 1) if valid else None
     avg_loss = round(sum(r["packet_loss_pct"] for r in results) / len(results), 1)
     return {
-        "targets": _PING_TARGETS,
+        "targets": list(_PING_TARGETS),
         "avg_latency_ms": avg_latency,
         "packet_loss_pct": avg_loss,
     }
@@ -96,4 +97,4 @@ class WANHealthClient:
                 "degraded": _is_degraded(probe),
             }
         except Exception as e:
-            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+            return {"success": False, "error": str(e), "suggestion": "Check ER605 connectivity at the configured host", "attempted": url}
