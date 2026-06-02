@@ -1,0 +1,99 @@
+import re
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
+
+from src.tools.er605 import ER605Client
+
+
+_PING_TARGETS = ["1.1.1.1", "8.8.8.8", "8.8.4.4"]
+_DEGRADED_LOSS_PCT = 5.0
+_DEGRADED_LATENCY_MS = 150.0
+
+
+def _ping_target(target: str) -> dict:
+    try:
+        result = subprocess.run(
+            ["ping", "-c", "5", "-i", "0.2", target],
+            capture_output=True, text=True, timeout=10,
+        )
+        output = result.stdout
+        loss_match = re.search(r"([\d.]+)% packet loss", output)
+        packet_loss = float(loss_match.group(1)) if loss_match else 100.0
+        avg_ms = None
+        rtt_match = re.search(r"min/avg/max/[^\s]+ = [\d.]+/([\d.]+)/", output)
+        if rtt_match:
+            avg_ms = float(rtt_match.group(1))
+        return {"target": target, "avg_latency_ms": avg_ms, "packet_loss_pct": packet_loss}
+    except Exception:
+        return {"target": target, "avg_latency_ms": None, "packet_loss_pct": 100.0}
+
+
+def _probe() -> dict:
+    results = []
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = [executor.submit(_ping_target, t) for t in _PING_TARGETS]
+        for f in futures:
+            results.append(f.result())
+    valid = [r["avg_latency_ms"] for r in results if r["avg_latency_ms"] is not None]
+    avg_latency = round(sum(valid) / len(valid), 1) if valid else None
+    avg_loss = round(sum(r["packet_loss_pct"] for r in results) / len(results), 1)
+    return {
+        "targets": _PING_TARGETS,
+        "avg_latency_ms": avg_latency,
+        "packet_loss_pct": avg_loss,
+    }
+
+
+def _is_degraded(probe: dict) -> bool:
+    return (probe.get("packet_loss_pct", 0.0) > _DEGRADED_LOSS_PCT or
+            (probe.get("avg_latency_ms") or 0.0) > _DEGRADED_LATENCY_MS)
+
+
+class WANHealthClient:
+    def __init__(self, host: str, username: str, password: str):
+        self._kwargs = {"host": host, "username": username, "password": password}
+
+    def _er605(self) -> ER605Client:
+        return ER605Client(**self._kwargs)
+
+    def get_wan_health(self) -> dict:
+        url = self._kwargs["host"]
+        try:
+            wan_status = self._er605().get_wan_status()
+            if not wan_status["success"]:
+                return wan_status
+
+            ifaces = {i["name"]: i for i in wan_status.get("interfaces", [])}
+
+            def _parse(name: str) -> dict | None:
+                i = ifaces.get(name)
+                if i is None:
+                    return None
+                return {
+                    "link": "up" if i.get("up") else "down",
+                    "ip": i.get("ip") or None,
+                    "gateway": i.get("gateway") or None,
+                    "bytes_in": i.get("bytes_in"),
+                    "bytes_out": i.get("bytes_out"),
+                }
+
+            wan1 = _parse("WAN1")
+            wan2 = _parse("WAN2")
+
+            active_wan = None
+            if wan1 and wan1["link"] == "up" and wan1["ip"]:
+                active_wan = "WAN1"
+            elif wan2 and wan2["link"] == "up" and wan2["ip"]:
+                active_wan = "WAN2"
+
+            probe = _probe()
+            return {
+                "success": True,
+                "active_wan": active_wan,
+                "wan1": wan1,
+                "wan2": wan2,
+                "probe": probe,
+                "degraded": _is_degraded(probe),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
