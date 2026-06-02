@@ -165,3 +165,46 @@ def test_lookup_vendor_not_found(tmp_path):
         vendor = inv._lookup_vendor("aa:bb:cc:dd:ee:ff")
 
     assert vendor is None
+
+
+# --- _enrich_pihole ---
+
+def test_enrich_pihole_adds_fields(tmp_path):
+    inv = DeviceInventory(labels_path=tmp_path / "devices.json", cfg=_cfg())
+    devices = {
+        "192.168.0.50": {
+            "ip": "192.168.0.50", "mac": "aa:bb:cc:dd:ee:ff",
+            "hostname": None, "pihole_queries_today": None, "pihole_last_seen": None,
+        }
+    }
+
+    with patch("src.tools.devices.PiholeClient") as MockPihole:
+        MockPihole.return_value.get_clients.return_value = {
+            "success": True,
+            "clients": [
+                {"ip": "192.168.0.50", "hostname": "xbox", "query_count": 142, "last_query": 1717330200}
+            ],
+        }
+        inv._enrich_pihole(devices)
+
+    assert devices["192.168.0.50"]["hostname"] == "xbox"
+    assert devices["192.168.0.50"]["pihole_queries_today"] == 142
+    assert devices["192.168.0.50"]["pihole_last_seen"] is not None
+
+
+def test_enrich_pihole_unavailable(tmp_path):
+    inv = DeviceInventory(labels_path=tmp_path / "devices.json", cfg=_cfg())
+    devices = {
+        "192.168.0.50": {
+            "ip": "192.168.0.50", "mac": "aa:bb:cc:dd:ee:ff",
+            "hostname": None, "pihole_queries_today": None, "pihole_last_seen": None,
+        }
+    }
+
+    with patch("src.tools.devices.PiholeClient") as MockPihole:
+        MockPihole.return_value.get_clients.return_value = {"success": False, "error": "unreachable"}
+        inv._enrich_pihole(devices)
+
+    # Fields remain None — no crash
+    assert devices["192.168.0.50"]["hostname"] is None
+    assert devices["192.168.0.50"]["pihole_queries_today"] is None

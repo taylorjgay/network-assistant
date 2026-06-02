@@ -96,3 +96,26 @@ class DeviceInventory:
             return _mac_lookup.lookup(mac)
         except Exception:
             return None
+
+    def _enrich_pihole(self, devices: dict) -> None:
+        if self._cfg is None:
+            return
+        try:
+            result = PiholeClient(**vars(self._cfg.pihole)).get_clients()
+            if not result.get("success"):
+                return
+            for client in result.get("clients", []):
+                ip = client.get("ip", "")
+                if ip not in devices:
+                    continue
+                hostname = client.get("hostname")
+                if hostname:
+                    devices[ip]["hostname"] = hostname
+                devices[ip]["pihole_queries_today"] = client.get("query_count")
+                last_query = client.get("last_query")
+                if last_query:
+                    devices[ip]["pihole_last_seen"] = datetime.fromtimestamp(
+                        last_query, tz=timezone.utc
+                    ).isoformat()
+        except Exception:
+            pass
