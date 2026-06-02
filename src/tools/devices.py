@@ -33,6 +33,51 @@ class DeviceInventory:
         self._labels_path = labels_path
         self._cfg = cfg
 
+    def get_network_devices(self, deep_scan: bool = False) -> dict:
+        try:
+            if deep_scan:
+                self._ping_sweep()
+
+            raw_devices = self._parse_arp_cache()
+            labels = self._load_labels()
+
+            devices: dict = {}
+            for d in raw_devices:
+                mac = _normalize_mac(d["mac"]) or d["mac"]
+                devices[d["ip"]] = {
+                    "ip": d["ip"],
+                    "mac": mac,
+                    "label": labels.get(mac),
+                    "hostname": None,
+                    "vendor": self._lookup_vendor(mac),
+                    "online": True,
+                    "pihole_queries_today": None,
+                    "pihole_last_seen": None,
+                    "deco_node": None,
+                    "deco_signal_dbm": None,
+                    "connection_type": None,
+                }
+
+            self._enrich_pihole(devices)
+            self._enrich_deco(devices)
+
+            sorted_devices = sorted(
+                devices.values(),
+                key=lambda d: [int(x) for x in d["ip"].split(".")],
+            )
+            return {
+                "success": True,
+                "deep_scan": deep_scan,
+                "device_count": len(sorted_devices),
+                "devices": sorted_devices,
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "suggestion": "Check that 'arp' is available on PATH",
+            }
+
     def label_device(self, mac: str, label: str) -> dict:
         normalized = _normalize_mac(mac)
         if normalized is None:

@@ -267,3 +267,88 @@ def test_ping_sweep_pings_subnet(tmp_path):
     assert "192.168.0.1" in pinged
     assert "192.168.0.254" in pinged
     assert len(pinged) == 254
+
+
+# --- get_network_devices ---
+
+def test_get_network_devices_fast_scan(tmp_path):
+    labels_file = tmp_path / "devices.json"
+    labels_file.write_text(json.dumps({"aa:bb:cc:dd:ee:ff": "Xbox Series X"}))
+    inv = DeviceInventory(labels_path=labels_file, cfg=_cfg())
+
+    arp_result = subprocess.CompletedProcess(
+        args=[], returncode=0,
+        stdout="? (192.168.0.50) at aa:bb:cc:dd:ee:ff on en0 ifscope [ethernet]\n",
+        stderr="",
+    )
+
+    with patch("subprocess.run", return_value=arp_result), \
+         patch("src.tools.devices._mac_lookup.lookup", return_value="Microsoft Corporation"), \
+         patch("src.tools.devices.PiholeClient") as MockPihole, \
+         patch("src.tools.devices.DecoClient") as MockDeco:
+
+        MockPihole.return_value.get_clients.return_value = {"success": False, "error": "offline"}
+        MockDeco.return_value.get_mesh_health.return_value = {"success": False, "error": "offline"}
+
+        result = inv.get_network_devices(deep_scan=False)
+
+    assert result["success"] is True
+    assert result["deep_scan"] is False
+    assert result["device_count"] == 1
+    device = result["devices"][0]
+    assert device["ip"] == "192.168.0.50"
+    assert device["mac"] == "aa:bb:cc:dd:ee:ff"
+    assert device["label"] == "Xbox Series X"
+    assert device["vendor"] == "Microsoft Corporation"
+    assert device["online"] is True
+
+
+def test_get_network_devices_deep_scan_triggers_sweep(tmp_path):
+    inv = DeviceInventory(labels_path=tmp_path / "devices.json", cfg=_cfg())
+    ping_calls = []
+
+    def fake_run(args, **kwargs):
+        if args[0] == 'ping':
+            ping_calls.append(args[-1])
+        return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="")
+
+    with patch("subprocess.run", side_effect=fake_run), \
+         patch("src.tools.devices.PiholeClient") as MockPihole, \
+         patch("src.tools.devices.DecoClient") as MockDeco:
+
+        MockPihole.return_value.get_clients.return_value = {"success": False}
+        MockDeco.return_value.get_mesh_health.return_value = {"success": False}
+
+        result = inv.get_network_devices(deep_scan=True)
+
+    assert result["success"] is True
+    assert result["deep_scan"] is True
+    assert len(ping_calls) == 254
+
+
+def test_get_network_devices_partial_enrichment(tmp_path):
+    """Pi-hole and Deco both offline — still returns ARP devices with success=True."""
+    inv = DeviceInventory(labels_path=tmp_path / "devices.json", cfg=_cfg())
+
+    arp_result = subprocess.CompletedProcess(
+        args=[], returncode=0,
+        stdout="? (192.168.0.50) at aa:bb:cc:dd:ee:ff on en0 ifscope [ethernet]\n",
+        stderr="",
+    )
+
+    with patch("subprocess.run", return_value=arp_result), \
+         patch("src.tools.devices._mac_lookup.lookup", side_effect=Exception("no vendor")), \
+         patch("src.tools.devices.PiholeClient") as MockPihole, \
+         patch("src.tools.devices.DecoClient") as MockDeco:
+
+        MockPihole.return_value.get_clients.return_value = {"success": False}
+        MockDeco.return_value.get_mesh_health.return_value = {"success": False}
+
+        result = inv.get_network_devices()
+
+    assert result["success"] is True
+    device = result["devices"][0]
+    assert device["hostname"] is None
+    assert device["vendor"] is None
+    assert device["pihole_queries_today"] is None
+    assert device["deco_node"] is None
