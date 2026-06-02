@@ -249,3 +249,21 @@ def test_enrich_deco_unavailable(tmp_path):
 
     # Fields remain None — no crash
     assert devices["192.168.0.100"]["deco_node"] is None
+
+
+# --- _ping_sweep ---
+
+def test_ping_sweep_pings_subnet(tmp_path):
+    inv = DeviceInventory(labels_path=tmp_path / "devices.json", cfg=_cfg())
+    pinged = []
+
+    def fake_ping(args, **kwargs):
+        pinged.append(args[-1])  # last arg is the IP
+        return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="")
+
+    with patch("subprocess.run", side_effect=fake_ping):
+        inv._ping_sweep()
+
+    assert "192.168.0.1" in pinged
+    assert "192.168.0.254" in pinged
+    assert len(pinged) == 254

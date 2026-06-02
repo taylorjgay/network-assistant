@@ -135,3 +135,15 @@ class DeviceInventory:
                     devices[ip]["connection_type"] = "deco_node"
         except Exception:
             pass
+
+    def _ping_sweep(self) -> None:
+        """Ping all hosts in 192.168.0.1-254 in parallel to populate the ARP cache."""
+        def ping_one(ip: str) -> None:
+            subprocess.run(
+                ['ping', '-c', '1', '-t', '1', ip],
+                capture_output=True, timeout=3
+            )
+
+        ips = [f'192.168.0.{i}' for i in range(1, 255)]
+        with ThreadPoolExecutor(max_workers=50) as executor:
+            list(executor.map(ping_one, ips))
