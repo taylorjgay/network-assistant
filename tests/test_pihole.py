@@ -187,6 +187,7 @@ def test_get_top_domains_allowed(client):
     assert len(result["domains"]) == 2
     assert result["domains"][0]["domain"] == "google.com"
     assert result["domains"][0]["count"] == 500
+    assert result["blocked_filter"] is False
 
 
 @respx.mock
@@ -201,6 +202,7 @@ def test_get_top_domains_blocked(client):
     result = client.get_top_domains(blocked=True)
     assert result["success"] is True
     assert result["domains"][0]["domain"] == "ads.evil.com"
+    assert result["blocked_filter"] is True
 
 
 @respx.mock
@@ -227,3 +229,4 @@ def test_get_top_clients_connect_error(client):
     )
     result = client.get_top_clients()
     assert result["success"] is False
+    assert "suggestion" in result
