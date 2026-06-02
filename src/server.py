@@ -92,6 +92,22 @@ def get_top_clients(count: int = 10) -> dict:
 
 
 @mcp.tool()
+def get_domain_lists() -> dict:
+    """Get all Pi-hole allowlist and blocklist entries (exact and regex)."""
+    if not _cfg:
+        return _NO_CONFIG
+    return PiholeClient(**vars(_cfg.pihole)).get_domain_lists()
+
+
+@mcp.tool()
+def get_clients() -> dict:
+    """Get all DNS clients Pi-hole has seen, with query counts and hostnames."""
+    if not _cfg:
+        return _NO_CONFIG
+    return PiholeClient(**vars(_cfg.pihole)).get_clients()
+
+
+@mcp.tool()
 def test_dns_resolution(hostname: str, dns_server: str | None = None) -> dict:
     """Resolve a hostname and report which DNS server answered and the resolved IPs.
     Optionally specify dns_server (e.g. '8.8.8.8') to bypass Pi-hole."""

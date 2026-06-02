@@ -230,3 +230,62 @@ def test_get_top_clients_connect_error(client):
     result = client.get_top_clients()
     assert result["success"] is False
     assert "suggestion" in result
+
+
+@respx.mock
+def test_get_domain_lists(client):
+    _mock_auth()
+    respx.get("http://192.168.0.10/api/domains").mock(
+        return_value=httpx.Response(200, json={"domains": [
+            {"id": 1, "type": 0, "kind": 0, "domain": "safe.com", "enabled": True, "comment": ""},
+            {"id": 2, "type": 1, "kind": 0, "domain": "ads.evil.com", "enabled": True, "comment": "spam"},
+            {"id": 3, "type": 1, "kind": 1, "domain": r"^tracker\.", "enabled": False, "comment": ""},
+        ]})
+    )
+    result = client.get_domain_lists()
+    assert result["success"] is True
+    assert len(result["allow"]) == 1
+    assert result["allow"][0]["domain"] == "safe.com"
+    assert len(result["block"]) == 2
+    assert result["block"][0]["kind"] == "exact"
+    assert result["block"][1]["kind"] == "regex"
+    assert result["block"][1]["enabled"] is False
+
+
+@respx.mock
+def test_get_domain_lists_empty(client):
+    _mock_auth()
+    respx.get("http://192.168.0.10/api/domains").mock(
+        return_value=httpx.Response(200, json={"domains": []})
+    )
+    result = client.get_domain_lists()
+    assert result["success"] is True
+    assert result["allow"] == []
+    assert result["block"] == []
+
+
+@respx.mock
+def test_get_clients(client):
+    _mock_auth()
+    respx.get("http://192.168.0.10/api/clients").mock(
+        return_value=httpx.Response(200, json={"clients": [
+            {"ip": "192.168.0.50", "name": "mypc", "count": 800, "last_query": 1717300000},
+            {"ip": "192.168.0.51", "name": "", "count": 200, "last_query": 1717290000},
+        ]})
+    )
+    result = client.get_clients()
+    assert result["success"] is True
+    assert len(result["clients"]) == 2
+    assert result["clients"][0]["ip"] == "192.168.0.50"
+    assert result["clients"][0]["hostname"] == "mypc"
+    assert result["clients"][0]["query_count"] == 800
+
+
+@respx.mock
+def test_get_clients_connect_error(client):
+    respx.post("http://192.168.0.10/api/auth").mock(
+        side_effect=httpx.ConnectError("refused")
+    )
+    result = client.get_clients()
+    assert result["success"] is False
+    assert "suggestion" in result

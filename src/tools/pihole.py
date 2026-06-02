@@ -179,3 +179,65 @@ class PiholeClient:
                     "suggestion": f"Cannot reach Pi-hole at {self.host}", "attempted": url}
         except Exception as e:
             return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+
+    def get_domain_lists(self) -> dict:
+        url = f"{self._base}/domains"
+        try:
+            with httpx.Client(timeout=10) as c:
+                sid = self._get_sid(c)
+                if sid is None:
+                    return {"success": False, "error": "Authentication failed",
+                            "suggestion": "Check api_token in config.json", "attempted": url}
+                resp = c.get(url, headers={"X-FTL-SID": sid})
+                resp.raise_for_status()
+                entries = resp.json().get("domains", [])
+            allow, block = [], []
+            for entry in entries:
+                item = {
+                    "domain": entry.get("domain", ""),
+                    "kind": "regex" if entry.get("kind") == 1 else "exact",
+                    "enabled": entry.get("enabled", True),
+                    "comment": entry.get("comment", ""),
+                }
+                if entry.get("type") == 0:
+                    allow.append(item)
+                else:
+                    block.append(item)
+            return {"success": True, "allow": allow, "block": block}
+        except httpx.HTTPStatusError as e:
+            return {"success": False, "error": f"HTTP {e.response.status_code}",
+                    "suggestion": "Check Pi-hole host in config.json", "attempted": url}
+        except httpx.ConnectError as e:
+            return {"success": False, "error": str(e),
+                    "suggestion": f"Cannot reach Pi-hole at {self.host}", "attempted": url}
+        except Exception as e:
+            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+
+    def get_clients(self) -> dict:
+        url = f"{self._base}/clients"
+        try:
+            with httpx.Client(timeout=10) as c:
+                sid = self._get_sid(c)
+                if sid is None:
+                    return {"success": False, "error": "Authentication failed",
+                            "suggestion": "Check api_token in config.json", "attempted": url}
+                resp = c.get(url, headers={"X-FTL-SID": sid})
+                resp.raise_for_status()
+                entries = resp.json().get("clients", [])
+            clients = []
+            for entry in entries:
+                clients.append({
+                    "ip": entry.get("ip", ""),
+                    "hostname": entry.get("name", ""),
+                    "query_count": entry.get("count", 0),
+                    "last_query": entry.get("last_query", 0),
+                })
+            return {"success": True, "clients": clients}
+        except httpx.HTTPStatusError as e:
+            return {"success": False, "error": f"HTTP {e.response.status_code}",
+                    "suggestion": "Check Pi-hole host in config.json", "attempted": url}
+        except httpx.ConnectError as e:
+            return {"success": False, "error": str(e),
+                    "suggestion": f"Cannot reach Pi-hole at {self.host}", "attempted": url}
+        except Exception as e:
+            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
