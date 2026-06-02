@@ -248,6 +248,60 @@ class PiholeClient:
         except Exception as e:
             return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
 
+    def add_domain(
+        self,
+        domain: str,
+        list_type: str = "block",
+        kind: str = "exact",
+        comment: str = "",
+    ) -> dict:
+        url = f"{self._base}/domains/{list_type}/{kind}"
+        try:
+            with httpx.Client(timeout=10) as c:
+                sid = self._get_sid(c)
+                if sid is None:
+                    return {"success": False, "error": "Authentication failed",
+                            "suggestion": "Check api_token in config.json", "attempted": url}
+                resp = c.post(url, headers={"X-FTL-SID": sid},
+                              json={"domain": domain, "comment": comment, "enabled": True})
+                resp.raise_for_status()
+            return {"success": True, "domain": domain, "list_type": list_type, "kind": kind}
+        except httpx.HTTPStatusError as e:
+            return {"success": False, "error": f"HTTP {e.response.status_code}",
+                    "suggestion": "Domain may already exist" if e.response.status_code == 409 else "Check Pi-hole host in config.json",
+                    "attempted": url}
+        except httpx.ConnectError as e:
+            return {"success": False, "error": str(e),
+                    "suggestion": f"Cannot reach Pi-hole at {self.host}", "attempted": url}
+        except Exception as e:
+            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+
+    def remove_domain(
+        self,
+        domain: str,
+        list_type: str = "block",
+        kind: str = "exact",
+    ) -> dict:
+        url = f"{self._base}/domains/{list_type}/{kind}/{domain}"
+        try:
+            with httpx.Client(timeout=10) as c:
+                sid = self._get_sid(c)
+                if sid is None:
+                    return {"success": False, "error": "Authentication failed",
+                            "suggestion": "Check api_token in config.json", "attempted": url}
+                resp = c.delete(url, headers={"X-FTL-SID": sid})
+                resp.raise_for_status()
+            return {"success": True, "domain": domain, "list_type": list_type, "kind": kind}
+        except httpx.HTTPStatusError as e:
+            return {"success": False, "error": f"HTTP {e.response.status_code}",
+                    "suggestion": "Domain not found in list" if e.response.status_code == 404 else "Check Pi-hole host in config.json",
+                    "attempted": url}
+        except httpx.ConnectError as e:
+            return {"success": False, "error": str(e),
+                    "suggestion": f"Cannot reach Pi-hole at {self.host}", "attempted": url}
+        except Exception as e:
+            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+
     def get_clients(self) -> dict:
         url = f"{self._base}/clients"
         try:

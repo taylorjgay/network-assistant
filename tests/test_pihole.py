@@ -320,3 +320,64 @@ def test_get_pihole_system_http_error(client):
     result = client.get_pihole_system()
     assert result["success"] is False
     assert "suggestion" in result
+
+
+@respx.mock
+def test_add_domain_allowlist(client):
+    _mock_auth()
+    respx.post("http://192.168.0.10/api/domains/allow/exact").mock(
+        return_value=httpx.Response(201, json={"domains": [
+            {"domain": "safe.com", "type": 0, "kind": 0, "enabled": True, "comment": "my note"}
+        ]})
+    )
+    result = client.add_domain("safe.com", list_type="allow", comment="my note")
+    assert result["success"] is True
+    assert result["domain"] == "safe.com"
+    assert result["list_type"] == "allow"
+
+
+@respx.mock
+def test_add_domain_blocklist_regex(client):
+    _mock_auth()
+    respx.post("http://192.168.0.10/api/domains/block/regex").mock(
+        return_value=httpx.Response(201, json={"domains": [
+            {"domain": r"^ads\.", "type": 1, "kind": 1, "enabled": True, "comment": ""}
+        ]})
+    )
+    result = client.add_domain(r"^ads\.", list_type="block", kind="regex")
+    assert result["success"] is True
+    assert result["list_type"] == "block"
+    assert result["kind"] == "regex"
+
+
+@respx.mock
+def test_add_domain_conflict(client):
+    _mock_auth()
+    respx.post("http://192.168.0.10/api/domains/allow/exact").mock(
+        return_value=httpx.Response(409, json={"error": "already exists"})
+    )
+    result = client.add_domain("safe.com", list_type="allow")
+    assert result["success"] is False
+    assert "409" in result["error"]
+
+
+@respx.mock
+def test_remove_domain(client):
+    _mock_auth()
+    respx.delete("http://192.168.0.10/api/domains/block/exact/ads.evil.com").mock(
+        return_value=httpx.Response(204)
+    )
+    result = client.remove_domain("ads.evil.com", list_type="block")
+    assert result["success"] is True
+    assert result["domain"] == "ads.evil.com"
+
+
+@respx.mock
+def test_remove_domain_not_found(client):
+    _mock_auth()
+    respx.delete("http://192.168.0.10/api/domains/block/exact/notexist.com").mock(
+        return_value=httpx.Response(404)
+    )
+    result = client.remove_domain("notexist.com", list_type="block")
+    assert result["success"] is False
+    assert "404" in result["error"]

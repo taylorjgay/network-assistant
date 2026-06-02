@@ -116,6 +116,31 @@ def get_pihole_system() -> dict:
 
 
 @mcp.tool()
+def add_domain(
+    domain: str,
+    list_type: str = "block",
+    kind: str = "exact",
+    comment: str = "",
+) -> dict:
+    """Add a domain to Pi-hole's allowlist or blocklist. list_type: 'allow' or 'block'. kind: 'exact' or 'regex'."""
+    if not _cfg:
+        return _NO_CONFIG
+    return PiholeClient(**vars(_cfg.pihole)).add_domain(domain, list_type=list_type, kind=kind, comment=comment)
+
+
+@mcp.tool()
+def remove_domain(
+    domain: str,
+    list_type: str = "block",
+    kind: str = "exact",
+) -> dict:
+    """Remove a domain from Pi-hole's allowlist or blocklist."""
+    if not _cfg:
+        return _NO_CONFIG
+    return PiholeClient(**vars(_cfg.pihole)).remove_domain(domain, list_type=list_type, kind=kind)
+
+
+@mcp.tool()
 def test_dns_resolution(hostname: str, dns_server: str | None = None) -> dict:
     """Resolve a hostname and report which DNS server answered and the resolved IPs.
     Optionally specify dns_server (e.g. '8.8.8.8') to bypass Pi-hole."""
