@@ -289,3 +289,63 @@ def test_set_wan_priority_error_1014(client):
     assert result["success"] is False
     assert "1014" in result["error"]
     assert "standalone" in result["suggestion"]
+
+
+PORT_FWD_URL = re.compile(
+    rf"{re.escape(BASE)}/cgi-bin/luci/;stok={STOK}/admin/nat\?form=virtual_server"
+)
+
+
+@respx.mock
+def test_get_port_forwards_success(client):
+    respx.post(PORT_FWD_URL).mock(return_value=httpx.Response(200, json={
+        "id": 1,
+        "result": {
+            "virtual_server": [
+                {
+                    "index": "1",
+                    "name": "Minecraft",
+                    "external_port": "25565",
+                    "internal_ip": "192.168.0.50",
+                    "internal_port": "25565",
+                    "protocol": "tcp",
+                    "enable": True,
+                }
+            ]
+        },
+        "error_code": "0",
+    }))
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.get_port_forwards()
+
+    assert result["success"] is True
+    assert len(result["rules"]) == 1
+    rule = result["rules"][0]
+    assert rule["name"] == "Minecraft"
+    assert rule["external_port"] == "25565"
+    assert rule["internal_ip"] == "192.168.0.50"
+
+
+@respx.mock
+def test_get_port_forwards_error_1014(client):
+    respx.post(PORT_FWD_URL).mock(return_value=httpx.Response(200, json={
+        "error_code": "1014", "result": {}
+    }))
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.get_port_forwards()
+
+    assert result["success"] is False
+    assert "1014" in result["error"]
+    assert "standalone" in result["suggestion"]
+
+
+@respx.mock
+def test_get_port_forwards_auth_failure(client):
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _login_fail_response("700")]
+
+    result = client.get_port_forwards()
+
+    assert result["success"] is False
+    assert "authentication failed" in result["error"]

@@ -191,6 +191,55 @@ class ER605Client:
         except Exception as e:
             return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
 
+    def get_port_forwards(self) -> dict:
+        url = self._base
+        try:
+            with httpx.Client(verify=False, timeout=10) as client:
+                stok, err = self._login(client)
+                if stok is None:
+                    return {
+                        "success": False,
+                        "error": f"ER605 authentication failed: {err}",
+                        "suggestion": "Check er605.username and er605.password in config.json",
+                        "attempted": url,
+                    }
+                data = self._api(client, stok, "nat", "virtual_server")
+
+            if data.get("error_code") != "0":
+                return {
+                    "success": False,
+                    "error": f"ER605 port forward endpoint error {data.get('error_code')}",
+                    "suggestion": "This endpoint may not be accessible on standalone ER605 firmware 2.x. Try the Web UI instead.",
+                    "attempted": url,
+                    "raw": data,
+                }
+
+            rules = data.get("result", {}).get("virtual_server", [])
+            return {
+                "success": True,
+                "rules": [
+                    {
+                        "id": r.get("index") or r.get("id"),
+                        "name": r.get("name"),
+                        "external_port": r.get("external_port"),
+                        "internal_ip": r.get("internal_ip"),
+                        "internal_port": r.get("internal_port"),
+                        "protocol": r.get("protocol"),
+                        "enabled": r.get("enable") or r.get("enabled"),
+                    }
+                    for r in rules
+                ],
+            }
+        except httpx.ConnectError:
+            return {
+                "success": False,
+                "error": "Cannot connect to ER605",
+                "suggestion": f"Verify er605.host in config.json — tried {self.host}",
+                "attempted": url,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+
     def get_wan_status(self) -> dict:
         url = self._base
         try:

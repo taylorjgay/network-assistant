@@ -51,6 +51,12 @@ def set_wan_priority(primary_wan: str, dry_run: bool = False) -> dict:
 
 
 @mcp.tool()
+def get_port_forwards() -> dict:
+    """List all ER605 port forwarding (virtual server) rules: name, external port, internal IP/port, protocol."""
+    return _er605.get_port_forwards() if _er605 else _NO_CONFIG
+
+
+@mcp.tool()
 def get_connected_clients() -> dict:
     """Get all devices on the Deco mesh: hostname, IP, MAC, which node, band."""
     if not _cfg:
