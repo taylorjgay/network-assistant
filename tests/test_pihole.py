@@ -398,10 +398,11 @@ def test_set_blocking_disable(client):
 def test_set_blocking_enable_with_timer(client):
     _mock_auth()
     respx.post("http://192.168.0.10/api/dns/blocking").mock(
-        return_value=httpx.Response(200, json={"blocking": "disabled", "timer": 300})
+        return_value=httpx.Response(200, json={"blocking": "enabled", "timer": 300})
     )
-    result = client.set_blocking(enabled=False, timer=300)
+    result = client.set_blocking(enabled=True, timer=300)
     assert result["success"] is True
+    assert result["blocking"] == "enabled"
     assert result["timer"] == 300
 
 
