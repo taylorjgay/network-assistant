@@ -412,6 +412,7 @@ def test_add_port_forward_error_1014(client):
 
     assert result["success"] is False
     assert "1014" in result["error"]
+    assert "standalone" in result["suggestion"]
 
 
 @respx.mock
@@ -450,3 +451,4 @@ def test_remove_port_forward_error_1014(client):
 
     assert result["success"] is False
     assert "1014" in result["error"]
+    assert "standalone" in result["suggestion"]
