@@ -512,3 +512,101 @@ def test_get_firewall_rules_auth_failure(client):
 
     assert result["success"] is False
     assert "authentication failed" in result["error"]
+
+
+@respx.mock
+def test_add_firewall_rule_success(client):
+    respx.post(FIREWALL_URL).mock(return_value=httpx.Response(200, json={
+        "error_code": "0",
+        "result": {"index": "2", "name": "Block IoT"},
+    }))
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.add_firewall_rule(name="Block IoT", src_ip="192.168.0.30", action="deny")
+
+    assert result["success"] is True
+    assert "rule" in result
+
+
+@respx.mock
+def test_add_firewall_rule_dry_run(client):
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.add_firewall_rule(
+        name="Block IoT", src_ip="192.168.0.30", action="deny", dry_run=True
+    )
+
+    assert result["success"] is True
+    assert result["dry_run"] is True
+    assert result["would_send"]["method"] == "add"
+    assert result["would_send"]["params"]["name"] == "Block IoT"
+    assert result["would_send"]["params"]["action"] == "deny"
+
+
+def test_add_firewall_rule_invalid_action(client):
+    result = client.add_firewall_rule(name="X", action="block")
+
+    assert result["success"] is False
+    assert "Invalid action" in result["error"]
+    assert "deny" in result["suggestion"]
+
+
+def test_add_firewall_rule_invalid_protocol(client):
+    result = client.add_firewall_rule(name="X", protocol="ftp")
+
+    assert result["success"] is False
+    assert "Invalid protocol" in result["error"]
+    assert "tcp" in result["suggestion"]
+
+
+@respx.mock
+def test_add_firewall_rule_error_1014(client):
+    respx.post(FIREWALL_URL).mock(return_value=httpx.Response(200, json={
+        "error_code": "1014", "result": {}
+    }))
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.add_firewall_rule(name="X")
+
+    assert result["success"] is False
+    assert "1014" in result["error"]
+    assert "standalone" in result["suggestion"]
+
+
+@respx.mock
+def test_remove_firewall_rule_success(client):
+    respx.post(FIREWALL_URL).mock(return_value=httpx.Response(200, json={
+        "error_code": "0", "result": {}
+    }))
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.remove_firewall_rule("2")
+
+    assert result["success"] is True
+    assert result["removed_id"] == "2"
+
+
+@respx.mock
+def test_remove_firewall_rule_dry_run(client):
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.remove_firewall_rule("2", dry_run=True)
+
+    assert result["success"] is True
+    assert result["dry_run"] is True
+    assert result["would_send"]["method"] == "del"
+    assert result["would_send"]["params"]["index"] == "2"
+
+
+@respx.mock
+def test_remove_firewall_rule_error_1014(client):
+    respx.post(FIREWALL_URL).mock(return_value=httpx.Response(200, json={
+        "error_code": "1014", "result": {}
+    }))
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.remove_firewall_rule("2")
+
+    assert result["success"] is False
+    assert "1014" in result["error"]
+    assert "standalone" in result["suggestion"]

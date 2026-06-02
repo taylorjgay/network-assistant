@@ -82,6 +82,25 @@ def get_firewall_rules() -> dict:
 
 
 @mcp.tool()
+def add_firewall_rule(
+    name: str,
+    src_ip: str = "",
+    dst_ip: str = "",
+    action: str = "deny",
+    protocol: str = "all",
+    dry_run: bool = False,
+) -> dict:
+    """Add an ER605 firewall ACL rule. action: 'deny' or 'allow'. protocol: 'tcp', 'udp', 'icmp', or 'all'. Empty src_ip/dst_ip means any. dry_run=True shows payload without applying."""
+    return _er605.add_firewall_rule(name, src_ip=src_ip, dst_ip=dst_ip, action=action, protocol=protocol, dry_run=dry_run) if _er605 else _NO_CONFIG
+
+
+@mcp.tool()
+def remove_firewall_rule(rule_id: str, dry_run: bool = False) -> dict:
+    """Remove an ER605 firewall ACL rule by ID (get IDs from get_firewall_rules). dry_run=True shows payload without applying."""
+    return _er605.remove_firewall_rule(rule_id, dry_run=dry_run) if _er605 else _NO_CONFIG
+
+
+@mcp.tool()
 def get_connected_clients() -> dict:
     """Get all devices on the Deco mesh: hostname, IP, MAC, which node, band."""
     if not _cfg:
