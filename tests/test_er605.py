@@ -452,3 +452,63 @@ def test_remove_port_forward_error_1014(client):
     assert result["success"] is False
     assert "1014" in result["error"]
     assert "standalone" in result["suggestion"]
+
+
+FIREWALL_URL = re.compile(
+    rf"{re.escape(BASE)}/cgi-bin/luci/;stok={STOK}/admin/firewall\?form=acl_ip"
+)
+
+
+@respx.mock
+def test_get_firewall_rules_success(client):
+    respx.post(FIREWALL_URL).mock(return_value=httpx.Response(200, json={
+        "id": 1,
+        "result": {
+            "acl_ip": [
+                {
+                    "index": "1",
+                    "name": "Block IoT",
+                    "src_ip": "192.168.0.30",
+                    "dst_ip": "",
+                    "action": "deny",
+                    "protocol": "all",
+                    "enable": True,
+                }
+            ]
+        },
+        "error_code": "0",
+    }))
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.get_firewall_rules()
+
+    assert result["success"] is True
+    assert len(result["rules"]) == 1
+    rule = result["rules"][0]
+    assert rule["name"] == "Block IoT"
+    assert rule["action"] == "deny"
+    assert rule["src_ip"] == "192.168.0.30"
+
+
+@respx.mock
+def test_get_firewall_rules_error_1014(client):
+    respx.post(FIREWALL_URL).mock(return_value=httpx.Response(200, json={
+        "error_code": "1014", "result": {}
+    }))
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.get_firewall_rules()
+
+    assert result["success"] is False
+    assert "1014" in result["error"]
+    assert "standalone" in result["suggestion"]
+
+
+@respx.mock
+def test_get_firewall_rules_auth_failure(client):
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _login_fail_response("700")]
+
+    result = client.get_firewall_rules()
+
+    assert result["success"] is False
+    assert "authentication failed" in result["error"]

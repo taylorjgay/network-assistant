@@ -76,6 +76,12 @@ def remove_port_forward(rule_id: str, dry_run: bool = False) -> dict:
 
 
 @mcp.tool()
+def get_firewall_rules() -> dict:
+    """List all ER605 firewall ACL rules: name, source IP, destination IP, action (allow/deny), protocol."""
+    return _er605.get_firewall_rules() if _er605 else _NO_CONFIG
+
+
+@mcp.tool()
 def get_connected_clients() -> dict:
     """Get all devices on the Deco mesh: hostname, IP, MAC, which node, band."""
     if not _cfg:
