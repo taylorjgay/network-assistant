@@ -195,3 +195,12 @@ def test_compare_wan_health_restored_false_when_restore_fails(client):
 
     assert result["success"] is True
     assert result["restored"] is False
+
+
+def test_get_wan_health_probe_exception(client):
+    with patch.object(ER605Client, "get_wan_status", return_value=_iface_result()):
+        with patch("src.tools.wan_health._probe", side_effect=Exception("ping subprocess failed")):
+            result = client.get_wan_health()
+
+    assert result["success"] is False
+    assert "ping subprocess failed" in result["error"]

@@ -74,8 +74,6 @@ class WANHealthClient:
                     "link": "up" if i.get("up") else "down",
                     "ip": i.get("ip") or None,
                     "gateway": i.get("gateway") or None,
-                    "bytes_in": i.get("bytes_in"),
-                    "bytes_out": i.get("bytes_out"),
                 }
 
             wan1 = _parse("WAN1")
@@ -101,20 +99,23 @@ class WANHealthClient:
 
     def compare_wan_health(self) -> dict:
         url = self._kwargs["host"]
-        policy = self._er605().get_wan_policy()
-        if not policy["success"]:
-            return policy
-        original = policy.get("primary_wan", "auto")
-
+        original = "auto"
         wan1_probe = None
         wan2_probe = None
         error = None
         restored = False
+        switched = False  # track if we actually changed WAN priority
         try:
+            policy = self._er605().get_wan_policy()
+            if not policy["success"]:
+                return policy
+            original = policy.get("primary_wan", "auto")
+
             r = self._er605().set_wan_priority("WAN1")
             if not r["success"]:
                 error = r
             else:
+                switched = True
                 time.sleep(2)
                 raw = _probe()
                 wan1_probe = {
@@ -136,11 +137,12 @@ class WANHealthClient:
         except Exception as e:
             error = {"success": False, "error": str(e), "suggestion": "Check ER605 connectivity at the configured host", "attempted": url}
         finally:
-            try:
-                r = self._er605().set_wan_priority(original)
-                restored = r.get("success", False)
-            except Exception:
-                restored = False
+            if switched:
+                try:
+                    r = self._er605().set_wan_priority(original)
+                    restored = r.get("success", False)
+                except Exception:
+                    restored = False
 
         if error:
             return {**error, "restored": restored}
