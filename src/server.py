@@ -85,7 +85,7 @@ def get_top_domains(blocked: bool = False, count: int = 10) -> dict:
 
 @mcp.tool()
 def get_top_clients(count: int = 10) -> dict:
-    """Get clients with the most DNS queries today."""
+    """Get the top N clients ranked by DNS query volume today (default top 10)."""
     if not _cfg:
         return _NO_CONFIG
     return PiholeClient(**vars(_cfg.pihole)).get_top_clients(count=count)
@@ -101,7 +101,7 @@ def get_domain_lists() -> dict:
 
 @mcp.tool()
 def get_clients() -> dict:
-    """Get all DNS clients Pi-hole has seen, with query counts and hostnames."""
+    """Get all known network clients Pi-hole has seen, with IP, hostname, total query count, and last seen time."""
     if not _cfg:
         return _NO_CONFIG
     return PiholeClient(**vars(_cfg.pihole)).get_clients()

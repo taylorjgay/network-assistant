@@ -197,7 +197,7 @@ class PiholeClient:
                     "domain": entry.get("domain", ""),
                     "kind": "regex" if entry.get("kind") == 1 else "exact",
                     "enabled": entry.get("enabled", True),
-                    "comment": entry.get("comment", ""),
+                    "comment": entry.get("comment") or "",
                 }
                 if entry.get("type") == 0:
                     allow.append(item)
