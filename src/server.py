@@ -76,6 +76,22 @@ def get_query_log(
 
 
 @mcp.tool()
+def get_top_domains(blocked: bool = False, count: int = 10) -> dict:
+    """Get top queried domains. Set blocked=True for top blocked domains."""
+    if not _cfg:
+        return _NO_CONFIG
+    return PiholeClient(**vars(_cfg.pihole)).get_top_domains(blocked=blocked, count=count)
+
+
+@mcp.tool()
+def get_top_clients(count: int = 10) -> dict:
+    """Get clients with the most DNS queries today."""
+    if not _cfg:
+        return _NO_CONFIG
+    return PiholeClient(**vars(_cfg.pihole)).get_top_clients(count=count)
+
+
+@mcp.tool()
 def test_dns_resolution(hostname: str, dns_server: str | None = None) -> dict:
     """Resolve a hostname and report which DNS server answered and the resolved IPs.
     Optionally specify dns_server (e.g. '8.8.8.8') to bypass Pi-hole."""

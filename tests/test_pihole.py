@@ -171,3 +171,59 @@ def test_get_query_log_connect_error(client):
     result = client.get_query_log()
     assert result["success"] is False
     assert "suggestion" in result
+
+
+@respx.mock
+def test_get_top_domains_allowed(client):
+    _mock_auth()
+    respx.get("http://192.168.0.10/api/stats/top_domains").mock(
+        return_value=httpx.Response(200, json={
+            "domains": {"google.com": 500, "apple.com": 300},
+            "total_queries": 1000,
+        })
+    )
+    result = client.get_top_domains(blocked=False, count=10)
+    assert result["success"] is True
+    assert len(result["domains"]) == 2
+    assert result["domains"][0]["domain"] == "google.com"
+    assert result["domains"][0]["count"] == 500
+
+
+@respx.mock
+def test_get_top_domains_blocked(client):
+    _mock_auth()
+    respx.get("http://192.168.0.10/api/stats/top_domains").mock(
+        return_value=httpx.Response(200, json={
+            "domains": {"ads.evil.com": 120},
+            "total_queries": 1000,
+        })
+    )
+    result = client.get_top_domains(blocked=True)
+    assert result["success"] is True
+    assert result["domains"][0]["domain"] == "ads.evil.com"
+
+
+@respx.mock
+def test_get_top_clients(client):
+    _mock_auth()
+    respx.get("http://192.168.0.10/api/stats/top_clients").mock(
+        return_value=httpx.Response(200, json={
+            "clients": {"192.168.0.50|mypc": 800, "192.168.0.51|phone": 400},
+            "total_queries": 1200,
+        })
+    )
+    result = client.get_top_clients(count=10)
+    assert result["success"] is True
+    assert len(result["clients"]) == 2
+    assert result["clients"][0]["ip"] == "192.168.0.50"
+    assert result["clients"][0]["name"] == "mypc"
+    assert result["clients"][0]["count"] == 800
+
+
+@respx.mock
+def test_get_top_clients_connect_error(client):
+    respx.post("http://192.168.0.10/api/auth").mock(
+        side_effect=httpx.ConnectError("refused")
+    )
+    result = client.get_top_clients()
+    assert result["success"] is False
