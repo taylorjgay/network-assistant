@@ -240,6 +240,119 @@ class ER605Client:
         except Exception as e:
             return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
 
+    def add_port_forward(
+        self,
+        name: str,
+        external_port: int,
+        internal_ip: str,
+        internal_port: int,
+        protocol: str = "tcp",
+        dry_run: bool = False,
+    ) -> dict:
+        url = self._base
+        if protocol not in ("tcp", "udp", "both"):
+            return {
+                "success": False,
+                "error": f"Invalid protocol '{protocol}'",
+                "suggestion": "Use 'tcp', 'udp', or 'both'",
+                "attempted": url,
+            }
+        params = {
+            "name": name,
+            "external_port": external_port,
+            "internal_ip": internal_ip,
+            "internal_port": internal_port,
+            "protocol": protocol,
+        }
+        try:
+            with httpx.Client(verify=False, timeout=10) as client:
+                stok, err = self._login(client)
+                if stok is None:
+                    return {
+                        "success": False,
+                        "error": f"ER605 authentication failed: {err}",
+                        "suggestion": "Check er605.username and er605.password in config.json",
+                        "attempted": url,
+                    }
+                if dry_run:
+                    return {
+                        "success": True,
+                        "dry_run": True,
+                        "would_send": {
+                            "resource": "nat",
+                            "form": "virtual_server",
+                            "method": "add",
+                            "params": params,
+                        },
+                    }
+                data = self._api_add(client, stok, "nat", "virtual_server", params)
+
+            if data.get("error_code") != "0":
+                return {
+                    "success": False,
+                    "error": f"ER605 add port forward error {data.get('error_code')}",
+                    "suggestion": "This endpoint may not be accessible on standalone ER605 firmware 2.x. Try the Web UI instead.",
+                    "attempted": url,
+                    "raw": data,
+                }
+
+            return {"success": True, "rule": data.get("result", {})}
+        except httpx.ConnectError:
+            return {
+                "success": False,
+                "error": "Cannot connect to ER605",
+                "suggestion": f"Verify er605.host in config.json — tried {self.host}",
+                "attempted": url,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+
+    def remove_port_forward(self, rule_id: str, dry_run: bool = False) -> dict:
+        url = self._base
+        params = {"index": rule_id}
+        try:
+            with httpx.Client(verify=False, timeout=10) as client:
+                stok, err = self._login(client)
+                if stok is None:
+                    return {
+                        "success": False,
+                        "error": f"ER605 authentication failed: {err}",
+                        "suggestion": "Check er605.username and er605.password in config.json",
+                        "attempted": url,
+                    }
+                if dry_run:
+                    return {
+                        "success": True,
+                        "dry_run": True,
+                        "would_send": {
+                            "resource": "nat",
+                            "form": "virtual_server",
+                            "method": "del",
+                            "params": params,
+                        },
+                    }
+                data = self._api_del(client, stok, "nat", "virtual_server", params)
+
+            if data.get("error_code") != "0":
+                return {
+                    "success": False,
+                    "error": f"ER605 remove port forward error {data.get('error_code')}",
+                    "suggestion": "This endpoint may not be accessible on standalone ER605 firmware 2.x. Try the Web UI instead.",
+                    "attempted": url,
+                    "raw": data,
+                }
+
+            return {"success": True, "removed_id": rule_id}
+        except httpx.ConnectError:
+            return {
+                "success": False,
+                "error": "Cannot connect to ER605",
+                "suggestion": f"Verify er605.host in config.json — tried {self.host}",
+                "attempted": url,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+
     def get_wan_status(self) -> dict:
         url = self._base
         try:

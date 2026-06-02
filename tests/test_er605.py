@@ -349,3 +349,104 @@ def test_get_port_forwards_auth_failure(client):
 
     assert result["success"] is False
     assert "authentication failed" in result["error"]
+
+
+@respx.mock
+def test_add_port_forward_success(client):
+    respx.post(PORT_FWD_URL).mock(return_value=httpx.Response(200, json={
+        "error_code": "0",
+        "result": {"index": "2", "name": "Game Server"},
+    }))
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.add_port_forward(
+        name="Game Server",
+        external_port=25565,
+        internal_ip="192.168.0.50",
+        internal_port=25565,
+        protocol="tcp",
+    )
+
+    assert result["success"] is True
+    assert "rule" in result
+
+
+@respx.mock
+def test_add_port_forward_dry_run(client):
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.add_port_forward(
+        name="Game Server",
+        external_port=25565,
+        internal_ip="192.168.0.50",
+        internal_port=25565,
+        dry_run=True,
+    )
+
+    assert result["success"] is True
+    assert result["dry_run"] is True
+    assert result["would_send"]["method"] == "add"
+    assert result["would_send"]["params"]["name"] == "Game Server"
+    assert result["would_send"]["params"]["external_port"] == 25565
+
+
+def test_add_port_forward_invalid_protocol(client):
+    result = client.add_port_forward(
+        name="X", external_port=80, internal_ip="192.168.0.50", internal_port=80, protocol="ftp"
+    )
+
+    assert result["success"] is False
+    assert "Invalid protocol" in result["error"]
+
+
+@respx.mock
+def test_add_port_forward_error_1014(client):
+    respx.post(PORT_FWD_URL).mock(return_value=httpx.Response(200, json={
+        "error_code": "1014", "result": {}
+    }))
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.add_port_forward(
+        name="X", external_port=80, internal_ip="192.168.0.50", internal_port=80
+    )
+
+    assert result["success"] is False
+    assert "1014" in result["error"]
+
+
+@respx.mock
+def test_remove_port_forward_success(client):
+    respx.post(PORT_FWD_URL).mock(return_value=httpx.Response(200, json={
+        "error_code": "0", "result": {}
+    }))
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.remove_port_forward("2")
+
+    assert result["success"] is True
+    assert result["removed_id"] == "2"
+
+
+@respx.mock
+def test_remove_port_forward_dry_run(client):
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.remove_port_forward("2", dry_run=True)
+
+    assert result["success"] is True
+    assert result["dry_run"] is True
+    assert result["would_send"]["method"] == "del"
+    assert result["would_send"]["params"]["index"] == "2"
+
+
+@respx.mock
+def test_remove_port_forward_error_1014(client):
+    respx.post(PORT_FWD_URL).mock(return_value=httpx.Response(200, json={
+        "error_code": "1014", "result": {}
+    }))
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+    result = client.remove_port_forward("2")
+
+    assert result["success"] is False
+    assert "1014" in result["error"]

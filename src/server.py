@@ -57,6 +57,25 @@ def get_port_forwards() -> dict:
 
 
 @mcp.tool()
+def add_port_forward(
+    name: str,
+    external_port: int,
+    internal_ip: str,
+    internal_port: int,
+    protocol: str = "tcp",
+    dry_run: bool = False,
+) -> dict:
+    """Add an ER605 port forward rule. protocol: 'tcp', 'udp', or 'both'. dry_run=True shows payload without applying."""
+    return _er605.add_port_forward(name, external_port, internal_ip, internal_port, protocol=protocol, dry_run=dry_run) if _er605 else _NO_CONFIG
+
+
+@mcp.tool()
+def remove_port_forward(rule_id: str, dry_run: bool = False) -> dict:
+    """Remove an ER605 port forward rule by ID (get IDs from get_port_forwards). dry_run=True shows payload without applying."""
+    return _er605.remove_port_forward(rule_id, dry_run=dry_run) if _er605 else _NO_CONFIG
+
+
+@mcp.tool()
 def get_connected_clients() -> dict:
     """Get all devices on the Deco mesh: hostname, IP, MAC, which node, band."""
     if not _cfg:
