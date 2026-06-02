@@ -141,6 +141,22 @@ def remove_domain(
 
 
 @mcp.tool()
+def set_blocking(enabled: bool, timer: int | None = None) -> dict:
+    """Enable or disable Pi-hole ad blocking. Optionally set timer (seconds) to auto-re-enable."""
+    if not _cfg:
+        return _NO_CONFIG
+    return PiholeClient(**vars(_cfg.pihole)).set_blocking(enabled=enabled, timer=timer)
+
+
+@mcp.tool()
+def update_gravity() -> dict:
+    """Trigger a Pi-hole gravity update to refresh blocklists. Runs asynchronously on the Pi."""
+    if not _cfg:
+        return _NO_CONFIG
+    return PiholeClient(**vars(_cfg.pihole)).update_gravity()
+
+
+@mcp.tool()
 def test_dns_resolution(hostname: str, dns_server: str | None = None) -> dict:
     """Resolve a hostname and report which DNS server answered and the resolved IPs.
     Optionally specify dns_server (e.g. '8.8.8.8') to bypass Pi-hole."""

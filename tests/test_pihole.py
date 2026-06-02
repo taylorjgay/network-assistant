@@ -381,3 +381,58 @@ def test_remove_domain_not_found(client):
     result = client.remove_domain("notexist.com", list_type="block")
     assert result["success"] is False
     assert "404" in result["error"]
+
+
+@respx.mock
+def test_set_blocking_disable(client):
+    _mock_auth()
+    respx.post("http://192.168.0.10/api/dns/blocking").mock(
+        return_value=httpx.Response(200, json={"blocking": "disabled", "timer": None})
+    )
+    result = client.set_blocking(enabled=False)
+    assert result["success"] is True
+    assert result["blocking"] == "disabled"
+
+
+@respx.mock
+def test_set_blocking_enable_with_timer(client):
+    _mock_auth()
+    respx.post("http://192.168.0.10/api/dns/blocking").mock(
+        return_value=httpx.Response(200, json={"blocking": "disabled", "timer": 300})
+    )
+    result = client.set_blocking(enabled=False, timer=300)
+    assert result["success"] is True
+    assert result["timer"] == 300
+
+
+@respx.mock
+def test_set_blocking_http_error(client):
+    _mock_auth()
+    respx.post("http://192.168.0.10/api/dns/blocking").mock(
+        return_value=httpx.Response(500)
+    )
+    result = client.set_blocking(enabled=True)
+    assert result["success"] is False
+    assert "suggestion" in result
+
+
+@respx.mock
+def test_update_gravity(client):
+    _mock_auth()
+    respx.post("http://192.168.0.10/api/gravity").mock(
+        return_value=httpx.Response(200, json={"status": "running"})
+    )
+    result = client.update_gravity()
+    assert result["success"] is True
+    assert "triggered" in result["message"].lower()
+
+
+@respx.mock
+def test_update_gravity_http_error(client):
+    _mock_auth()
+    respx.post("http://192.168.0.10/api/gravity").mock(
+        return_value=httpx.Response(500)
+    )
+    result = client.update_gravity()
+    assert result["success"] is False
+    assert "suggestion" in result

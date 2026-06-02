@@ -302,6 +302,54 @@ class PiholeClient:
         except Exception as e:
             return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
 
+    def set_blocking(self, enabled: bool, timer: int | None = None) -> dict:
+        url = f"{self._base}/dns/blocking"
+        body: dict = {"blocking": "enabled" if enabled else "disabled"}
+        if timer is not None:
+            body["timer"] = timer
+        try:
+            with httpx.Client(timeout=10) as c:
+                sid = self._get_sid(c)
+                if sid is None:
+                    return {"success": False, "error": "Authentication failed",
+                            "suggestion": "Check api_token in config.json", "attempted": url}
+                resp = c.post(url, headers={"X-FTL-SID": sid}, json=body)
+                resp.raise_for_status()
+                data = resp.json()
+            return {
+                "success": True,
+                "blocking": data.get("blocking", ""),
+                "timer": data.get("timer"),
+            }
+        except httpx.HTTPStatusError as e:
+            return {"success": False, "error": f"HTTP {e.response.status_code}",
+                    "suggestion": "Check Pi-hole host in config.json", "attempted": url}
+        except httpx.ConnectError as e:
+            return {"success": False, "error": str(e),
+                    "suggestion": f"Cannot reach Pi-hole at {self.host}", "attempted": url}
+        except Exception as e:
+            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+
+    def update_gravity(self) -> dict:
+        url = f"{self._base}/gravity"
+        try:
+            with httpx.Client(timeout=15) as c:
+                sid = self._get_sid(c)
+                if sid is None:
+                    return {"success": False, "error": "Authentication failed",
+                            "suggestion": "Check api_token in config.json", "attempted": url}
+                resp = c.post(url, headers={"X-FTL-SID": sid})
+                resp.raise_for_status()
+            return {"success": True, "message": "Gravity update triggered — runs in background on Pi-hole"}
+        except httpx.HTTPStatusError as e:
+            return {"success": False, "error": f"HTTP {e.response.status_code}",
+                    "suggestion": "Check Pi-hole host in config.json", "attempted": url}
+        except httpx.ConnectError as e:
+            return {"success": False, "error": str(e),
+                    "suggestion": f"Cannot reach Pi-hole at {self.host}", "attempted": url}
+        except Exception as e:
+            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+
     def get_clients(self) -> dict:
         url = f"{self._base}/clients"
         try:
