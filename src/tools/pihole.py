@@ -197,11 +197,11 @@ class PiholeClient:
             for entry in entries:
                 item = {
                     "domain": entry.get("domain", ""),
-                    "kind": "regex" if entry.get("kind") == 1 else "exact",
+                    "kind": "regex" if entry.get("kind") in (1, "regex") else "exact",
                     "enabled": entry.get("enabled", True),
                     "comment": entry.get("comment") or "",
                 }
-                if entry.get("type") == 0:
+                if entry.get("type") in ("allow", 0):
                     allow.append(item)
                 else:
                     block.append(item)

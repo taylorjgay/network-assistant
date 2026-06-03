@@ -1,9 +1,8 @@
 {
   "mcpServers": {
     "network-assistant": {
-      "command": "/Users/taylorgay/Documents/Claude/Projects/NetworkAssistant/.venv/bin/python",
-      "args": ["-m", "src.server"],
-      "cwd": "/Users/taylorgay/Documents/Claude/Projects/NetworkAssistant"
+      "type": "sse",
+      "url": "http://localhost:8000/sse"
     }
   }
 }

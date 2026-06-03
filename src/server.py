@@ -308,8 +308,8 @@ def get_upnp_portmaps() -> dict:
 def compare_wan_speed(quick: bool = False) -> dict:
     """Compare WAN1 vs WAN2 speed and latency. quick=True runs a fast latency-only check (~15s); quick=False runs a full Ookla speedtest (~2-3 min). Returns side-by-side results and a recommendation."""
     cfg = load_config(_config_path)
-    return WANSpeedClient(**cfg["er605"]).compare_wan_speed(quick=quick)
+    return WANSpeedClient(**vars(cfg.er605)).compare_wan_speed(quick=quick)
 
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport="sse")
