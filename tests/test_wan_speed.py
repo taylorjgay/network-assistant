@@ -193,6 +193,18 @@ class TestFullMode:
 
         assert "comparable" in result["recommendation"].lower()
 
+    def test_full_mode_zero_ping_no_crash(self, client):
+        # speedtest occasionally reports 0ms ping — must not ZeroDivisionError
+        st1 = self._mock_speedtest(dl_bps=500_000_000, ul_bps=40_000_000, ping=0.0)
+        st2 = self._mock_speedtest(dl_bps=100_000_000, ul_bps=20_000_000, ping=15.0)
+        er = _mock_er605()
+        with patch.object(client, "_er605", return_value=er):
+            with patch("src.tools.wan_speed.speedtest.Speedtest", side_effect=[st1, st2]):
+                result = client.compare_wan_speed(quick=False)
+
+        assert result["success"] is True
+        assert "recommendation" in result
+
     def test_no_internal_server_id_in_output(self, client):
         st1 = self._mock_speedtest()
         st2 = self._mock_speedtest()

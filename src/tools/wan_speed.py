@@ -117,10 +117,10 @@ def _recommend(wan1: dict | None, wan2: dict | None, quick: bool) -> str:
     max_ul = max(ul1, ul2) if max(ul1, ul2) != 0.0 else 1.0
     min_lat = min(lat1, lat2) if min(lat1, lat2) != 0.0 else 1.0
 
-    score1 = (dl1 / max_dl) * 0.4 + (ul1 / max_ul) * 0.3 + (min_lat / lat1) * 0.3
-    score2 = (dl2 / max_dl) * 0.4 + (ul2 / max_ul) * 0.3 + (min_lat / lat2) * 0.3
+    score1 = (dl1 / max_dl) * 0.4 + (ul1 / max_ul) * 0.3 + (min_lat / max(lat1, 0.001)) * 0.3
+    score2 = (dl2 / max_dl) * 0.4 + (ul2 / max_ul) * 0.3 + (min_lat / max(lat2, 0.001)) * 0.3
 
-    margin = abs(score1 - score2) / max(score1, score2)
+    margin = abs(score1 - score2) / (max(score1, score2) or 1.0)
     if margin < 0.10:
         return "Both WANs comparable — no strong recommendation"
 
