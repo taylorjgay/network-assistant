@@ -14,6 +14,8 @@ from src.tools.deco import DecoClient
 from src.tools.pihole import PiholeClient
 from src.tools.devices import DeviceInventory
 from src.tools.wan_health import WANHealthClient
+from src.tools.upnp import get_upnp_status as _get_upnp_status, get_upnp_portmaps as _get_upnp_portmaps
+from src.tools.wan_speed import WANSpeedClient
 
 mcp = FastMCP("NetworkAssistant")
 
@@ -288,6 +290,25 @@ def traceroute_host(host: str) -> dict:
 def run_speedtest() -> dict:
     """Run an internet speed test and return download Mbps, upload Mbps, and ping."""
     return _run_speedtest()
+
+
+@mcp.tool()
+def get_upnp_status() -> dict:
+    """Get UPnP gateway status: whether UPnP is available, external IP, and connection state."""
+    return _get_upnp_status()
+
+
+@mcp.tool()
+def get_upnp_portmaps() -> dict:
+    """List all active UPnP port mappings registered by LAN devices (e.g. Xbox, Switch)."""
+    return _get_upnp_portmaps()
+
+
+@mcp.tool()
+def compare_wan_speed(quick: bool = False) -> dict:
+    """Compare WAN1 vs WAN2 speed and latency. quick=True runs a fast latency-only check (~15s); quick=False runs a full Ookla speedtest (~2-3 min). Returns side-by-side results and a recommendation."""
+    cfg = load_config(_config_path)
+    return WANSpeedClient(**cfg["er605"]).compare_wan_speed(quick=quick)
 
 
 if __name__ == "__main__":
