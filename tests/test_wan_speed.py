@@ -102,3 +102,25 @@ class TestQuickMode:
                 result = client.compare_wan_speed(quick=True)
 
         assert result["restored"] is False
+
+    def test_policy_failure_returns_uniform_envelope(self, client):
+        er = _mock_er605(policy={"success": False, "error": "auth failed"})
+        with patch.object(client, "_er605", return_value=er):
+            result = client.compare_wan_speed(quick=True)
+
+        assert result["success"] is False
+        assert "auth failed" in result["error"]
+        assert result["quick"] is True
+        assert result["wan1"] is None
+        assert result["wan2"] is None
+        assert result["restored"] is False
+
+    def test_clean_strips_underscore_keys(self, client):
+        er = _mock_er605()
+        with patch.object(client, "_er605", return_value=er):
+            with patch("src.tools.wan_speed._probe", side_effect=[PROBE_WAN1, PROBE_WAN2]):
+                result = client.compare_wan_speed(quick=True)
+
+        # Quick mode never produces _-prefixed keys, but _clean must not pass them through
+        assert all(not k.startswith("_") for k in result["wan1"].keys())
+        assert all(not k.startswith("_") for k in result["wan2"].keys())

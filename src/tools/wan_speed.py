@@ -23,7 +23,7 @@ class WANSpeedClient:
         try:
             policy = self._er605().get_wan_policy()
             if not policy["success"]:
-                return policy
+                return {**policy, "quick": quick, "wan1": None, "wan2": None, "restored": False}
             original = policy.get("primary_wan", "auto")
 
             r = self._er605().set_wan_priority("WAN1")
@@ -82,8 +82,8 @@ def _recommend(wan1: dict | None, wan2: dict | None, quick: bool) -> str:
     if wan1 is None or wan2 is None:
         return "Incomplete data — could not compare"
 
-    lat1 = wan1.get("latency_ms") or 999.0
-    lat2 = wan2.get("latency_ms") or 999.0
+    lat1 = wan1.get("latency_ms") if wan1.get("latency_ms") is not None else 999.0
+    lat2 = wan2.get("latency_ms") if wan2.get("latency_ms") is not None else 999.0
 
     if quick:
         margin = abs(lat1 - lat2) / max(lat1, lat2)
@@ -93,10 +93,10 @@ def _recommend(wan1: dict | None, wan2: dict | None, quick: bool) -> str:
         ratio = round(max(lat1, lat2) / min(lat1, lat2), 1)
         return f"{winner} recommended — {ratio}× lower latency"
 
-    dl1 = wan1.get("download_mbps") or 0.0
-    dl2 = wan2.get("download_mbps") or 0.0
-    ul1 = wan1.get("upload_mbps") or 0.0
-    ul2 = wan2.get("upload_mbps") or 0.0
+    dl1 = wan1.get("download_mbps") if wan1.get("download_mbps") is not None else 0.0
+    dl2 = wan2.get("download_mbps") if wan2.get("download_mbps") is not None else 0.0
+    ul1 = wan1.get("upload_mbps") if wan1.get("upload_mbps") is not None else 0.0
+    ul2 = wan2.get("upload_mbps") if wan2.get("upload_mbps") is not None else 0.0
 
     max_dl = max(dl1, dl2) or 1.0
     max_ul = max(ul1, ul2) or 1.0
