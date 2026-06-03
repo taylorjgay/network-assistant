@@ -124,3 +124,82 @@ class TestQuickMode:
         # Quick mode never produces _-prefixed keys, but _clean must not pass them through
         assert all(not k.startswith("_") for k in result["wan1"].keys())
         assert all(not k.startswith("_") for k in result["wan2"].keys())
+
+
+class TestFullMode:
+    def _mock_speedtest(self, dl_bps=900_000_000, ul_bps=50_000_000,
+                        ping=12.0, server_name="NYC-01", server_id=42):
+        st = MagicMock()
+        st.results.server = {"id": server_id, "name": server_name}
+        st.results.ping = ping
+        st.download.return_value = dl_bps
+        st.upload.return_value = ul_bps
+        return st
+
+    def test_full_mode_both_succeed(self, client):
+        st1 = self._mock_speedtest(dl_bps=900_000_000, ul_bps=50_000_000,
+                                   ping=12.0, server_name="NYC-01", server_id=42)
+        st2 = self._mock_speedtest(dl_bps=120_000_000, ul_bps=35_000_000,
+                                   ping=28.0, server_name="NYC-01", server_id=42)
+        er = _mock_er605()
+        with patch.object(client, "_er605", return_value=er):
+            with patch("src.tools.wan_speed.speedtest.Speedtest", side_effect=[st1, st2]):
+                result = client.compare_wan_speed(quick=False)
+
+        assert result["success"] is True
+        assert result["quick"] is False
+        assert result["wan1"]["download_mbps"] == 900.0
+        assert result["wan1"]["upload_mbps"] == 50.0
+        assert result["wan1"]["latency_ms"] == 12.0
+        assert result["wan1"]["server"] == "NYC-01"
+        assert result["wan2"]["download_mbps"] == 120.0
+        assert result["wan2"]["server"] == "NYC-01"
+        assert "WAN1" in result["recommendation"]
+        assert result["restored"] is True
+
+    def test_full_mode_forces_same_server_for_wan2(self, client):
+        st1 = self._mock_speedtest(server_id=42)
+        st2 = self._mock_speedtest(server_id=42)
+        er = _mock_er605()
+        with patch.object(client, "_er605", return_value=er):
+            with patch("src.tools.wan_speed.speedtest.Speedtest", side_effect=[st1, st2]):
+                client.compare_wan_speed(quick=False)
+
+        # WAN2 speedtest should have been told to use server 42
+        st2.get_servers.assert_called_once_with([42])
+
+    def test_full_mode_speedtest_exception_on_wan2(self, client):
+        st1 = self._mock_speedtest()
+        er = _mock_er605()
+        with patch.object(client, "_er605", return_value=er):
+            with patch("src.tools.wan_speed.speedtest.Speedtest",
+                       side_effect=[st1, Exception("timeout")]):
+                result = client.compare_wan_speed(quick=False)
+
+        assert result["success"] is False
+        assert "timeout" in result["error"]
+        assert result["wan1"]["download_mbps"] == 900.0
+        assert result["wan2"] is None
+        assert result["restored"] is True
+
+    def test_full_mode_tie(self, client):
+        # Same numbers → score difference = 0 → tie
+        st1 = self._mock_speedtest(dl_bps=500_000_000, ul_bps=50_000_000, ping=15.0)
+        st2 = self._mock_speedtest(dl_bps=500_000_000, ul_bps=50_000_000, ping=15.0)
+        er = _mock_er605()
+        with patch.object(client, "_er605", return_value=er):
+            with patch("src.tools.wan_speed.speedtest.Speedtest", side_effect=[st1, st2]):
+                result = client.compare_wan_speed(quick=False)
+
+        assert "comparable" in result["recommendation"].lower()
+
+    def test_no_internal_server_id_in_output(self, client):
+        st1 = self._mock_speedtest()
+        st2 = self._mock_speedtest()
+        er = _mock_er605()
+        with patch.object(client, "_er605", return_value=er):
+            with patch("src.tools.wan_speed.speedtest.Speedtest", side_effect=[st1, st2]):
+                result = client.compare_wan_speed(quick=False)
+
+        assert "_server_id" not in result["wan1"]
+        assert "_server_id" not in result["wan2"]

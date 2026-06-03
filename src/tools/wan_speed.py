@@ -1,6 +1,8 @@
 from __future__ import annotations
 import time
 
+import speedtest
+
 from src.tools.er605 import ER605Client
 from src.tools.wan_health import _probe
 
@@ -75,7 +77,20 @@ class WANSpeedClient:
                 "latency_ms": raw["avg_latency_ms"],
                 "packet_loss_pct": raw["packet_loss_pct"],
             }
-        raise NotImplementedError("full mode not yet implemented")
+        st = speedtest.Speedtest(secure=True)
+        if server_id is not None:
+            st.get_servers([server_id])
+        st.get_best_server()
+        dl_bps = st.download()
+        ul_bps = st.upload()
+        server = st.results.server
+        return {
+            "download_mbps": round(dl_bps / 1_000_000, 1),
+            "upload_mbps": round(ul_bps / 1_000_000, 1),
+            "latency_ms": st.results.ping,
+            "server": server.get("name", ""),
+            "_server_id": server.get("id"),
+        }
 
 
 def _recommend(wan1: dict | None, wan2: dict | None, quick: bool) -> str:
@@ -98,9 +113,9 @@ def _recommend(wan1: dict | None, wan2: dict | None, quick: bool) -> str:
     ul1 = wan1.get("upload_mbps") if wan1.get("upload_mbps") is not None else 0.0
     ul2 = wan2.get("upload_mbps") if wan2.get("upload_mbps") is not None else 0.0
 
-    max_dl = max(dl1, dl2) or 1.0
-    max_ul = max(ul1, ul2) or 1.0
-    min_lat = min(lat1, lat2) or 1.0
+    max_dl = max(dl1, dl2) if max(dl1, dl2) != 0.0 else 1.0
+    max_ul = max(ul1, ul2) if max(ul1, ul2) != 0.0 else 1.0
+    min_lat = min(lat1, lat2) if min(lat1, lat2) != 0.0 else 1.0
 
     score1 = (dl1 / max_dl) * 0.4 + (ul1 / max_ul) * 0.3 + (min_lat / lat1) * 0.3
     score2 = (dl2 / max_dl) * 0.4 + (ul2 / max_ul) * 0.3 + (min_lat / lat2) * 0.3
