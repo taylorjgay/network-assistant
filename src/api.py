@@ -129,10 +129,13 @@ async def serve_static(request: Request) -> Response:
             {"error": "Dashboard not built. Run: cd dashboard && npm run build"},
             status_code=503,
         )
-    file_path = _DIST / path
+    file_path = (_DIST / path).resolve()
+    dist_resolved = _DIST.resolve()
+    if not str(file_path).startswith(str(dist_resolved)):
+        return JSONResponse({"error": "Forbidden"}, status_code=403)
     if file_path.exists() and file_path.is_file():
         return FileResponse(str(file_path))
-    index = _DIST / "index.html"
+    index = dist_resolved / "index.html"
     if index.exists():
         return FileResponse(str(index))
     return JSONResponse({"error": "Not found"}, status_code=404)

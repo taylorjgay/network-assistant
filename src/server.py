@@ -410,11 +410,15 @@ async def _api_device_label(request: Request) -> JSONResponse:
     if request.method == "DELETE":
         return JSONResponse(await api.do_remove_label(_cfg, mac))
     body = await request.json()
-    return JSONResponse(await api.do_label_device(_cfg, mac, body.get("label", "")))
+    label = body.get("label", "").strip()
+    if not label:
+        return JSONResponse({"success": False, "error": "label is required"}, status_code=400)
+    return JSONResponse(await api.do_label_device(_cfg, mac, label))
 
 
 @mcp.custom_route("/api/upnp", methods=["GET"])
 async def _api_upnp(request: Request) -> JSONResponse:
+    # UPnP uses SSDP discovery — no credentials needed
     return JSONResponse(await api.upnp())
 
 
@@ -423,13 +427,16 @@ async def _api_ports(request: Request) -> JSONResponse:
     if not _cfg:
         return JSONResponse(_NO_CONFIG, status_code=503)
     if request.method == "POST":
-        body = await request.json()
+        try:
+            body = await request.json()
+            name = body["name"]
+            external_port = int(body["external_port"])
+            internal_ip = body["internal_ip"]
+            internal_port = int(body["internal_port"])
+        except (KeyError, TypeError, ValueError) as exc:
+            return JSONResponse({"success": False, "error": f"Bad request: {exc}"}, status_code=400)
         return JSONResponse(await api.do_add_port_forward(
-            _cfg,
-            body["name"],
-            int(body["external_port"]),
-            body["internal_ip"],
-            int(body["internal_port"]),
+            _cfg, name, external_port, internal_ip, internal_port,
             body.get("protocol", "tcp"),
         ))
     return JSONResponse(await api.get_port_forwards(_cfg))
