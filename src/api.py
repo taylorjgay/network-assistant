@@ -25,10 +25,10 @@ async def snapshot(cfg: Config) -> dict:
         return_exceptions=True,
     )
     return {
-        "wan": wan if not isinstance(wan, Exception) else {"success": False, "error": str(wan)},
-        "pihole": pihole if not isinstance(pihole, Exception) else {"success": False, "error": str(pihole)},
-        "mesh": mesh if not isinstance(mesh, Exception) else {"success": False, "error": str(mesh)},
-        "router": router if not isinstance(router, Exception) else {"success": False, "error": str(router)},
+        "wan": wan if not isinstance(wan, BaseException) else {"success": False, "error": str(wan)},
+        "pihole": pihole if not isinstance(pihole, BaseException) else {"success": False, "error": str(pihole)},
+        "mesh": mesh if not isinstance(mesh, BaseException) else {"success": False, "error": str(mesh)},
+        "router": router if not isinstance(router, BaseException) else {"success": False, "error": str(router)},
     }
 
 
@@ -41,7 +41,9 @@ async def wan_compare(cfg: Config) -> dict:
 
 
 async def set_wan_priority(cfg: Config, primary_wan: str) -> dict:
-    return await asyncio.to_thread(ER605Client(**vars(cfg.er605)).set_wan_priority, primary_wan)
+    return await asyncio.to_thread(
+        ER605Client(**vars(cfg.er605)).set_wan_priority, primary_wan, dry_run=False
+    )
 
 
 async def pihole_stats(cfg: Config) -> dict:
@@ -115,7 +117,9 @@ async def do_add_port_forward(
 
 
 async def do_remove_port_forward(cfg: Config, rule_id: str) -> dict:
-    return await asyncio.to_thread(ER605Client(**vars(cfg.er605)).remove_port_forward, rule_id)
+    return await asyncio.to_thread(
+        ER605Client(**vars(cfg.er605)).remove_port_forward, rule_id, dry_run=False
+    )
 
 
 async def serve_static(request: Request) -> Response:
