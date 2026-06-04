@@ -27,9 +27,9 @@ def test_snapshot_returns_expected_keys():
         client = TestClient(server_module.mcp.sse_app())
         resp = client.get("/api/snapshot")
 
-    assert resp.status_code == 200
-    data = resp.json()
-    assert "wan" in data
-    assert "pihole" in data
-    assert "mesh" in data
-    assert "router" in data
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "wan" in data
+        assert "pihole" in data
+        assert "mesh" in data
+        assert "router" in data
