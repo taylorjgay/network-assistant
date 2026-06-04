@@ -1,8 +1,11 @@
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
 
 from src.config import load_config
+from src import api
 from src.tools.diagnostics import (
     ping_host as _ping_host,
     traceroute_host as _traceroute_host,
@@ -309,6 +312,140 @@ def compare_wan_speed(quick: bool = False) -> dict:
     """Compare WAN1 vs WAN2 speed and latency. quick=True runs a fast latency-only check (~15s); quick=False runs a full Ookla speedtest (~2-3 min). Returns side-by-side results and a recommendation."""
     cfg = load_config(_config_path)
     return WANSpeedClient(**vars(cfg.er605)).compare_wan_speed(quick=quick)
+
+
+# ── REST API routes ──────────────────────────────────────────────────────────
+
+@mcp.custom_route("/api/snapshot", methods=["GET"])
+async def _api_snapshot(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    return JSONResponse(await api.snapshot(_cfg))
+
+
+@mcp.custom_route("/api/wan", methods=["GET"])
+async def _api_wan(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    return JSONResponse(await api.wan_health(_cfg))
+
+
+@mcp.custom_route("/api/wan/priority", methods=["POST"])
+async def _api_wan_priority(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    body = await request.json()
+    return JSONResponse(await api.set_wan_priority(_cfg, body.get("primary_wan", "auto")))
+
+
+@mcp.custom_route("/api/wan/compare", methods=["POST"])
+async def _api_wan_compare(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    return JSONResponse(await api.wan_compare(_cfg))
+
+
+@mcp.custom_route("/api/pihole/stats", methods=["GET"])
+async def _api_pihole_stats(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    return JSONResponse(await api.pihole_stats(_cfg))
+
+
+@mcp.custom_route("/api/pihole/trends", methods=["GET"])
+async def _api_pihole_trends(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    return JSONResponse(await api.pihole_trends(_cfg))
+
+
+@mcp.custom_route("/api/pihole/top-domains", methods=["GET"])
+async def _api_pihole_top_domains(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    return JSONResponse(await api.pihole_top_domains(_cfg))
+
+
+@mcp.custom_route("/api/pihole/system", methods=["GET"])
+async def _api_pihole_system(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    return JSONResponse(await api.pihole_system(_cfg))
+
+
+@mcp.custom_route("/api/pihole/blocking", methods=["POST"])
+async def _api_pihole_blocking(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    body = await request.json()
+    return JSONResponse(await api.set_pihole_blocking(_cfg, bool(body.get("enabled", True))))
+
+
+@mcp.custom_route("/api/mesh", methods=["GET"])
+async def _api_mesh(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    return JSONResponse(await api.mesh_health(_cfg))
+
+
+@mcp.custom_route("/api/devices", methods=["GET"])
+async def _api_devices(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    return JSONResponse(await api.get_devices(_cfg))
+
+
+@mcp.custom_route("/api/devices/scan", methods=["POST"])
+async def _api_devices_scan(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    return JSONResponse(await api.get_devices(_cfg, deep_scan=True))
+
+
+@mcp.custom_route("/api/devices/{mac}/label", methods=["POST", "DELETE"])
+async def _api_device_label(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    mac = request.path_params["mac"]
+    if request.method == "DELETE":
+        return JSONResponse(await api.do_remove_label(_cfg, mac))
+    body = await request.json()
+    return JSONResponse(await api.do_label_device(_cfg, mac, body.get("label", "")))
+
+
+@mcp.custom_route("/api/upnp", methods=["GET"])
+async def _api_upnp(request: Request) -> JSONResponse:
+    return JSONResponse(await api.upnp())
+
+
+@mcp.custom_route("/api/ports", methods=["GET", "POST"])
+async def _api_ports(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    if request.method == "POST":
+        body = await request.json()
+        return JSONResponse(await api.do_add_port_forward(
+            _cfg,
+            body["name"],
+            int(body["external_port"]),
+            body["internal_ip"],
+            int(body["internal_port"]),
+            body.get("protocol", "tcp"),
+        ))
+    return JSONResponse(await api.get_port_forwards(_cfg))
+
+
+@mcp.custom_route("/api/ports/{rule_id}", methods=["DELETE"])
+async def _api_ports_remove(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    return JSONResponse(await api.do_remove_port_forward(_cfg, request.path_params["rule_id"]))
+
+
+# Must be last — catch-all for React SPA
+@mcp.custom_route("/{path:path}", methods=["GET"])
+async def _serve_static(request: Request) -> Response:
+    return await api.serve_static(request)
 
 
 if __name__ == "__main__":
