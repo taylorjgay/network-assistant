@@ -153,7 +153,7 @@ export default function FirewallPage() {
                         size="sm"
                         variant="ghost"
                         className="h-7 px-2 text-xs text-red-500 hover:text-red-600"
-                        disabled={removing === rule.id}
+                        disabled={!rule.id || removing === rule.id}
                         onClick={() => rule.id && handleRemove(rule.id, rule.name)}
                       >
                         Remove
