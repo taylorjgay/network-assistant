@@ -1,4 +1,7 @@
 config.json
+devices.json
+CLAUDE.md
+tmp_*.py
 .superpowers/
 __pycache__/
 *.pyc
@@ -10,4 +13,3 @@ dist/
 .env
 build/
 .claude/settings.local.json
-devices.json
