@@ -26,12 +26,12 @@ export default function OverviewPage() {
     refetchInterval: 300_000,
   })
 
-  const handleToggleBlocking = async () => {
+  const handleToggleBlocking = async (checked: boolean) => {
     if (!snap?.pihole?.success) return
     try {
-      await api.setPiholeBlocking(!snap.pihole.enabled)
+      await api.setPiholeBlocking(checked)
       queryClient.invalidateQueries({ queryKey: ['snapshot'] })
-      toast.success(snap.pihole.enabled ? 'Pi-hole blocking disabled' : 'Pi-hole blocking enabled')
+      toast.success(checked ? 'Pi-hole blocking enabled' : 'Pi-hole blocking disabled')
     } catch {
       toast.error('Failed to toggle Pi-hole blocking')
     }
@@ -66,7 +66,7 @@ export default function OverviewPage() {
         <StatCard
           title="WAN1"
           value={<StatusBadge online={wan1Up} />}
-          subtitle={probe && wan1Up ? `${probe.latency_ms?.toFixed(0) ?? '—'}ms · ${probe.packet_loss_pct}% loss` : undefined}
+          subtitle={probe && wan1Up ? `${probe.avg_latency_ms?.toFixed(0) ?? '—'}ms · ${probe.packet_loss_pct}% loss` : undefined}
           action={activeWan !== 'WAN1' && wan1Up ? (
             <Button size="sm" variant="outline" onClick={() => handleSwitchWan('WAN1')}>
               Set Active
@@ -78,7 +78,7 @@ export default function OverviewPage() {
         <StatCard
           title="WAN2"
           value={<StatusBadge online={wan2Up} />}
-          subtitle={probe && wan2Up ? `${probe.latency_ms?.toFixed(0) ?? '—'}ms · ${probe.packet_loss_pct}% loss` : undefined}
+          subtitle={probe && wan2Up ? `${probe.avg_latency_ms?.toFixed(0) ?? '—'}ms · ${probe.packet_loss_pct}% loss` : undefined}
           action={activeWan !== 'WAN2' && wan2Up ? (
             <Button size="sm" variant="outline" onClick={() => handleSwitchWan('WAN2')}>
               Set Active
@@ -105,8 +105,12 @@ export default function OverviewPage() {
         />
         <StatCard
           title="Mesh"
-          value={mesh?.success ? `${mesh.node_count} / ${mesh.nodes.length} online` : '—'}
-          subtitle={mesh?.success ? (mesh.node_count === mesh.nodes.length ? 'All nodes healthy' : 'Some nodes offline') : mesh?.error}
+          value={mesh?.success ? `${mesh.nodes.filter(n => n.mesh_status === 'connected').length} / ${mesh.nodes.length} online` : '—'}
+          subtitle={mesh?.success ? (
+            mesh.nodes.filter(n => n.mesh_status === 'connected').length === mesh.nodes.length
+              ? 'All nodes healthy'
+              : 'Some nodes offline'
+          ) : mesh?.error}
         />
         <StatCard
           title="Router"

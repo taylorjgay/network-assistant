@@ -28,13 +28,13 @@ export default function DnsPage() {
     queryFn: api.getPiholeTopDomains,
   })
 
-  const handleToggleBlocking = async () => {
+  const handleToggleBlocking = async (checked: boolean) => {
     if (!stats?.success) return
     try {
-      await api.setPiholeBlocking(!stats.enabled)
+      await api.setPiholeBlocking(checked)
       queryClient.invalidateQueries({ queryKey: ['pihole-stats'] })
       queryClient.invalidateQueries({ queryKey: ['snapshot'] })
-      toast.success(stats.enabled ? 'Blocking disabled' : 'Blocking enabled')
+      toast.success(checked ? 'Blocking enabled' : 'Blocking disabled')
     } catch {
       toast.error('Failed to toggle Pi-hole blocking')
     }

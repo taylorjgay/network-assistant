@@ -7,7 +7,7 @@ export interface WANInterface {
 }
 
 export interface WANProbe {
-  latency_ms: number | null
+  avg_latency_ms: number | null
   packet_loss_pct: number
 }
 

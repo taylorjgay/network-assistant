@@ -74,7 +74,7 @@ export default function NetworkPage() {
     refetchInterval: 30_000,
   })
 
-  const { data: deviceData, isLoading: devicesLoading, refetch: refetchDevices } = useQuery({
+  const { data: deviceData, isLoading: devicesLoading } = useQuery({
     queryKey: ['devices'],
     queryFn: api.getDevices,
   })
@@ -82,8 +82,8 @@ export default function NetworkPage() {
   const handleDeepScan = async () => {
     setScanning(true)
     try {
-      await api.scanDevices()
-      await refetchDevices()
+      const result = await api.scanDevices()
+      queryClient.setQueryData(['devices'], result)
       toast.success('Deep scan complete')
     } catch {
       toast.error('Scan failed')

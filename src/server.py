@@ -334,7 +334,10 @@ async def _api_wan(request: Request) -> JSONResponse:
 async def _api_wan_priority(request: Request) -> JSONResponse:
     if not _cfg:
         return JSONResponse(_NO_CONFIG, status_code=503)
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"success": False, "error": "Invalid JSON body"}, status_code=400)
     return JSONResponse(await api.set_wan_priority(_cfg, body.get("primary_wan", "auto")))
 
 
@@ -377,7 +380,10 @@ async def _api_pihole_system(request: Request) -> JSONResponse:
 async def _api_pihole_blocking(request: Request) -> JSONResponse:
     if not _cfg:
         return JSONResponse(_NO_CONFIG, status_code=503)
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"success": False, "error": "Invalid JSON body"}, status_code=400)
     return JSONResponse(await api.set_pihole_blocking(_cfg, bool(body.get("enabled", True))))
 
 

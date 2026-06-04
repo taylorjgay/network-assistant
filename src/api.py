@@ -93,8 +93,12 @@ async def upnp() -> dict:
     status, portmaps = await asyncio.gather(
         asyncio.to_thread(get_upnp_status),
         asyncio.to_thread(get_upnp_portmaps),
+        return_exceptions=True,
     )
-    return {"status": status, "portmaps": portmaps}
+    return {
+        "status": status if not isinstance(status, BaseException) else {"success": False, "error": str(status)},
+        "portmaps": portmaps if not isinstance(portmaps, BaseException) else {"success": False, "error": str(portmaps), "mappings": []},
+    }
 
 
 async def get_port_forwards(cfg: Config) -> dict:
@@ -131,7 +135,7 @@ async def serve_static(request: Request) -> Response:
         )
     file_path = (_DIST / path).resolve()
     dist_resolved = _DIST.resolve()
-    if not str(file_path).startswith(str(dist_resolved)):
+    if not file_path.is_relative_to(dist_resolved):
         return JSONResponse({"error": "Forbidden"}, status_code=403)
     if file_path.exists() and file_path.is_file():
         return FileResponse(str(file_path))
