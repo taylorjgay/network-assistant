@@ -17,13 +17,26 @@ _DIST = Path(__file__).parent.parent / "dashboard" / "dist"
 
 
 async def snapshot(cfg: Config) -> dict:
-    wan, pihole, mesh, router = await asyncio.gather(
-        asyncio.to_thread(WANHealthClient(**vars(cfg.er605)).get_wan_health),
+    # ER605 rejects concurrent logins from the same IP — run wan+router sequentially,
+    # but in parallel with pihole and deco which hit different devices.
+    async def _er605_sequential():
+        w = await asyncio.to_thread(WANHealthClient(**vars(cfg.er605)).get_wan_health)
+        r = await asyncio.to_thread(ER605Client(**vars(cfg.er605)).get_router_info)
+        return w, r
+
+    er605_result, pihole, mesh = await asyncio.gather(
+        _er605_sequential(),
         asyncio.to_thread(PiholeClient(**vars(cfg.pihole)).get_pihole_stats),
         asyncio.to_thread(DecoClient(**vars(cfg.deco)).get_mesh_health),
-        asyncio.to_thread(ER605Client(**vars(cfg.er605)).get_router_info),
         return_exceptions=True,
     )
+
+    if isinstance(er605_result, BaseException):
+        err = {"success": False, "error": str(er605_result)}
+        wan, router = err, err
+    else:
+        wan, router = er605_result
+
     return {
         "wan": wan if not isinstance(wan, BaseException) else {"success": False, "error": str(wan)},
         "pihole": pihole if not isinstance(pihole, BaseException) else {"success": False, "error": str(pihole)},
