@@ -142,7 +142,7 @@ export default function OverviewPage() {
               <YAxis tick={{ fontSize: 10 }} width={40} />
               <Tooltip
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                formatter={(v: any, name: string) => [v.toLocaleString(), name]}
+                formatter={(v: any, name: any) => [typeof v === 'number' ? v.toLocaleString() : v, String(name ?? '')]}
                 labelFormatter={(l) => new Date(l).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               />
               <Area type="monotone" dataKey="total" stroke="#6366f1" fill="url(#gradTotal)" name="Total" />
