@@ -43,16 +43,6 @@ export default function OverviewPage() {
     }
   }
 
-  const handleSwitchWan = async (wan: string) => {
-    try {
-      await api.setWanPriority(wan)
-      queryClient.invalidateQueries({ queryKey: ['snapshot'] })
-      toast.success(`Switched active WAN to ${wan}`)
-    } catch {
-      toast.error('Failed to switch WAN')
-    }
-  }
-
   if (isLoading) {
     return <div className="text-muted-foreground text-sm">Loading...</div>
   }
@@ -106,13 +96,12 @@ export default function OverviewPage() {
                     {up ? (data?.ip ?? '—') : 'Down'}
                     {up && probe ? ` · ${probe.avg_latency_ms?.toFixed(0)}ms` : ''}
                   </span>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {up && (
-                      <>
-                        <Switch checked={isActive} onCheckedChange={() => handleSwitchWan(label)} />
-                        {isActive && <span className="text-xs font-medium text-green-500">Active</span>}
-                      </>
-                    )}
+                  <div className="shrink-0">
+                    {isActive
+                      ? <span className="text-xs font-medium text-green-500">Active</span>
+                      : up
+                        ? <span className="text-xs text-muted-foreground">Standby</span>
+                        : null}
                   </div>
                 </div>
               )
@@ -150,10 +139,12 @@ export default function OverviewPage() {
                   <span className="font-medium">{nodeName(node.nickname, i)}</span>
                   <span className="ml-auto">
                     {node.is_primary
-                      ? <span className="text-xs font-medium bg-indigo-600 text-white rounded px-1.5 py-0.5">Primary</span>
-                      : node.signal_level_dbm != null
-                        ? <span className="text-xs text-muted-foreground">{node.signal_level_dbm} dBm</span>
-                        : null}
+                      ? <span className="text-xs font-medium text-green-500">Primary</span>
+                      : node.backhaul?.includes('wired')
+                        ? <span className="text-xs text-muted-foreground">Wired</span>
+                        : node.signal_level_dbm != null
+                          ? <span className="text-xs text-muted-foreground">{node.signal_level_dbm} dBm</span>
+                          : null}
                   </span>
                 </div>
               ))}
@@ -178,7 +169,7 @@ export default function OverviewPage() {
             <div className="text-xs text-muted-foreground mt-0.5">
               {pihole?.success
                 ? [
-                    pihole.hostname ?? 'Raspberry Pi',
+                    'Raspberry Pi',
                     pihole.cpu_percent != null ? `CPU ${pihole.cpu_percent}%` : null,
                     pihole.mem_percent != null ? `Mem ${pihole.mem_percent}%` : null,
                     pihole.uptime_seconds != null ? `up ${formatUptime(pihole.uptime_seconds)}` : null,

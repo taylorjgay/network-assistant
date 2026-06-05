@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl -s --max-time 1 http://localhost:8000/sse -o /dev/null 2>&1; [ $? -eq 7 ] && echo '{\"systemMessage\": \"MCP server not running — start it before using network tools: .venv/bin/python -m src.server\"}'",
+            "command": "curl -s --max-time 1 http://localhost:8000/mcp -o /dev/null 2>&1; [ $? -eq 7 ] && echo '{\"systemMessage\": \"MCP server not running — start it before using network tools: .venv/bin/python -m src.server\"}'",
             "statusMessage": "Checking MCP server..."
           }
         ]
