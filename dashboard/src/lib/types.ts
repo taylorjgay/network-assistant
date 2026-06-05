@@ -28,6 +28,10 @@ export interface PiholeStats {
   block_pct: number
   domains_blocked: number
   enabled: boolean
+  hostname?: string
+  cpu_percent?: number
+  mem_percent?: number
+  uptime_seconds?: number
   error?: string
 }
 
@@ -39,7 +43,7 @@ export interface MeshNode {
   mesh_status: string
   inet_status: string | null
   inet_error: string | null
-  backhaul: string | null
+  backhaul: string[] | null
   signal_level_dbm: number | null
 }
 
@@ -47,6 +51,8 @@ export interface MeshHealth {
   success: boolean
   nodes: MeshNode[]
   node_count: number
+  cpu_percent?: number
+  mem_percent?: number
   error?: string
 }
 

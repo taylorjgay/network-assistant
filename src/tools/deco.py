@@ -189,8 +189,22 @@ class DecoClient:
                 "attempted": f"https://{self.host}/cgi-bin/luci/;stok=.../admin/client?form=client_list",
             }
 
+    def get_deco_performance(self) -> dict:
+        """Get CPU and memory usage from the primary Deco node."""
+        try:
+            with httpx.Client(verify=False, timeout=15) as client:
+                data = self._request("network", "performance", client)
+                result = data.get("result", {})
+                return {
+                    "success": True,
+                    "cpu_percent": round(result.get("cpu_usage", 0) * 100),
+                    "mem_percent": round(result.get("mem_usage", 0) * 100),
+                }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def get_mesh_health(self) -> dict:
-        """Get status of all Deco nodes including backhaul type and signal strength."""
+        """Get status of all Deco nodes including backhaul type, signal strength, and performance."""
         try:
             with httpx.Client(verify=False, timeout=15) as client:
                 data = self._request("device", "device_list", client)
@@ -201,12 +215,10 @@ class DecoClient:
                         "ip": n.get("device_ip"),
                         "nickname": n.get("nickname"),
                         "is_primary": n.get("role") == "master",
-                        # mesh_status: is this node connected to the mesh?
                         "mesh_status": (
                             "connected" if n.get("role") == "master"
                             else n.get("group_status", "unknown")
                         ),
-                        # inet_status: does the Deco see internet? ("offline" = real outage)
                         "inet_status": n.get("inet_status"),
                         "inet_error": n.get("inet_error_msg"),
                         "backhaul": n.get("connection_type"),
@@ -214,7 +226,16 @@ class DecoClient:
                     }
                     for n in nodes_raw
                 ]
-                return {"success": True, "nodes": nodes, "node_count": len(nodes)}
+                result: dict = {"success": True, "nodes": nodes, "node_count": len(nodes)}
+                # Fetch performance within the same TCP session — stok is connection-bound.
+                try:
+                    perf = self._request("network", "performance", client)
+                    pr = perf.get("result", {})
+                    result["cpu_percent"] = round(pr.get("cpu_usage", 0) * 100)
+                    result["mem_percent"] = round(pr.get("mem_usage", 0) * 100)
+                except Exception:
+                    pass
+                return result
         except Exception as e:
             return {
                 "success": False,

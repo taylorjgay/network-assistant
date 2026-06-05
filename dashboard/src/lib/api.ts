@@ -26,6 +26,7 @@ async function del<T>(path: string): Promise<T> {
 }
 
 export const api = {
+  getHosts: () => get<{ router: string | null; deco: string | null; pihole: string | null }>('/hosts'),
   getSnapshot: () => get<Snapshot>('/snapshot'),
   getWanHealth: () => get<WANHealth>('/wan'),
   compareWan: () => post<unknown>('/wan/compare'),

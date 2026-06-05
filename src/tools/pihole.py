@@ -1,6 +1,23 @@
 from collections import defaultdict
 from datetime import datetime, timezone
+import threading
+import time
 import httpx
+
+# Reuse Pi-hole sessions to avoid hammering /api/auth (Pi-hole v6 rate-limits it).
+# TTL is 4 min; Pi-hole v6 default session lifetime is 5 min.
+_sid_cache: dict[str, tuple[str, float]] = {}
+_sid_lock = threading.Lock()
+_auth_locks: dict[str, threading.Lock] = {}
+_auth_locks_meta = threading.Lock()
+_SID_TTL = 240
+
+
+def _get_auth_lock(host: str) -> threading.Lock:
+    with _auth_locks_meta:
+        if host not in _auth_locks:
+            _auth_locks[host] = threading.Lock()
+        return _auth_locks[host]
 
 _BLOCKED_STATUSES = {1, 4, 5, 6, 10, 12, 13, 14, 15}
 
@@ -19,10 +36,24 @@ class PiholeClient:
         self._base = f"http://{host}/api"
 
     def _get_sid(self, client: httpx.Client) -> str | None:
-        resp = client.post(f"{self._base}/auth", json={"password": self.api_token})
-        resp.raise_for_status()
-        session = resp.json().get("session", {})
-        return session.get("sid") if session.get("valid") else None
+        with _sid_lock:
+            cached = _sid_cache.get(self.host)
+            if cached and time.monotonic() < cached[1]:
+                return cached[0]
+        # Serialize auth per host so simultaneous calls share one session.
+        with _get_auth_lock(self.host):
+            with _sid_lock:
+                cached = _sid_cache.get(self.host)
+                if cached and time.monotonic() < cached[1]:
+                    return cached[0]
+            resp = client.post(f"{self._base}/auth", json={"password": self.api_token})
+            resp.raise_for_status()
+            session = resp.json().get("session", {})
+            sid = session.get("sid") if session.get("valid") else None
+            if sid:
+                with _sid_lock:
+                    _sid_cache[self.host] = (sid, time.monotonic() + _SID_TTL)
+            return sid
 
     def get_pihole_stats(self) -> dict:
         """Get Pi-hole summary statistics."""
@@ -234,10 +265,12 @@ class PiholeClient:
                 "success": True,
                 "hostname": sys_data.get("hostname", ""),
                 "uptime_seconds": sys_data.get("uptime", 0),
+                "cpu_percent": round(cpu.get("%cpu", 0)),
+                "mem_percent": round(mem.get("%used", 0)),
                 "cpu_load_1m": load_raw[0] if len(load_raw) > 0 else 0,
                 "cpu_load_5m": load_raw[1] if len(load_raw) > 1 else 0,
                 "cpu_load_15m": load_raw[2] if len(load_raw) > 2 else 0,
-                "ram_total_mb": round(mem.get("total", 0) / 1_000_000),  # API returns bytes; using SI MB
+                "ram_total_mb": round(mem.get("total", 0) / 1_000_000),
                 "ram_used_mb": round(mem.get("used", 0) / 1_000_000),
                 "ram_free_mb": round(mem.get("free", 0) / 1_000_000),
             }

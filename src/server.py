@@ -316,6 +316,13 @@ def compare_wan_speed(quick: bool = False) -> dict:
 
 # ── REST API routes ──────────────────────────────────────────────────────────
 
+@mcp.custom_route("/api/hosts", methods=["GET"])
+async def _api_hosts(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    return JSONResponse(await api.get_hosts(_cfg))
+
+
 @mcp.custom_route("/api/snapshot", methods=["GET"])
 async def _api_snapshot(request: Request) -> JSONResponse:
     if not _cfg:

@@ -14,6 +14,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import type { Device } from '@/lib/types'
+import { cn } from '@/lib/utils'
 
 function LabelDialog({ device, onLabeled }: { device: Device; onLabeled: () => void }) {
   const [open, setOpen] = useState(false)
@@ -63,6 +64,31 @@ function LabelDialog({ device, onLabeled }: { device: Device; onLabeled: () => v
   )
 }
 
+const nodeName = (nickname: string | null, fallbackIndex: number) =>
+  nickname ? nickname.charAt(0).toUpperCase() + nickname.slice(1) : `Node ${fallbackIndex + 1}`
+
+const sortNodes = <T extends { is_primary: boolean; nickname: string | null }>(nodes: T[]) =>
+  [...nodes].sort((a, b) => {
+    if (a.is_primary !== b.is_primary) return a.is_primary ? -1 : 1
+    return (a.nickname ?? '').localeCompare(b.nickname ?? '')
+  })
+
+function formatBackhaul(backhaul: string[] | null, isPrimary: boolean): string {
+  if (isPrimary) return 'wired to router'
+  if (!backhaul || backhaul.length === 0) return 'unknown backhaul'
+  return backhaul
+    .map(b => b === 'band2_4' ? '2.4 GHz' : b === 'band5' ? '5 GHz' : b === 'band6' ? '6 GHz' : b)
+    .join(' + ')
+}
+
+function signalQuality(dbm: number | null): { label: string; className: string } | null {
+  if (dbm == null) return null
+  if (dbm >= -50) return { label: 'Excellent', className: 'text-green-500' }
+  if (dbm >= -65) return { label: 'Good', className: 'text-green-400' }
+  if (dbm >= -75) return { label: 'Fair', className: 'text-yellow-500' }
+  return { label: 'Poor', className: 'text-red-400' }
+}
+
 export default function NetworkPage() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
@@ -77,6 +103,8 @@ export default function NetworkPage() {
   const { data: deviceData, isLoading: devicesLoading } = useQuery({
     queryKey: ['devices'],
     queryFn: api.getDevices,
+    staleTime: 60_000,
+    refetchOnMount: true,
   })
 
   const handleDeepScan = async () => {
@@ -110,20 +138,45 @@ export default function NetworkPage() {
         {meshLoading ? (
           <div className="text-sm text-muted-foreground">Loading...</div>
         ) : mesh?.success ? (
-          <div className="space-y-2">
-            {mesh.nodes.map((node, i) => (
-              <div key={i} className="flex items-center gap-3 text-sm">
-                <StatusBadge online={node.mesh_status === 'connected'} />
-                <span className="font-medium">{node.nickname ?? `Node ${i + 1}`}</span>
-                {node.is_primary && <Badge variant="secondary">Primary</Badge>}
-                <span className="text-muted-foreground text-xs">
-                  {node.backhaul ?? 'unknown backhaul'}
-                  {node.signal_level_dbm != null && ` · ${node.signal_level_dbm} dBm`}
-                </span>
-                {node.ip && <span className="text-muted-foreground text-xs ml-auto">{node.ip}</span>}
-              </div>
-            ))}
-          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs w-8"></TableHead>
+                <TableHead className="text-xs">Node</TableHead>
+                <TableHead className="text-xs">Backhaul</TableHead>
+                <TableHead className="text-xs">Signal</TableHead>
+                <TableHead className="text-xs">IP</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sortNodes(mesh.nodes).map((node, i) => {
+                const sig = signalQuality(node.signal_level_dbm)
+                return (
+                  <TableRow key={i}>
+                    <TableCell><StatusBadge online={node.mesh_status === 'connected'} /></TableCell>
+                    <TableCell className="text-xs font-medium">
+                      <span>{nodeName(node.nickname, i)}</span>
+                      {node.is_primary && <Badge variant="secondary" className="ml-2 text-xs">Primary</Badge>}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {formatBackhaul(node.backhaul, node.is_primary)}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {node.signal_level_dbm != null ? (
+                        <span>
+                          {node.signal_level_dbm} dBm
+                          {sig && !node.backhaul?.includes('wired') && (
+                            <span className={cn('ml-1.5 font-medium', sig.className)}>({sig.label})</span>
+                          )}
+                        </span>
+                      ) : '—'}
+                    </TableCell>
+                    <TableCell className="text-xs font-mono text-muted-foreground">{node.ip ?? '—'}</TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
         ) : (
           <div className="text-sm text-muted-foreground">{mesh?.error ?? 'Could not reach Deco'}</div>
         )}

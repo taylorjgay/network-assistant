@@ -17,16 +17,28 @@ _DIST = Path(__file__).parent.parent / "dashboard" / "dist"
 
 
 async def snapshot(cfg: Config) -> dict:
-    # ER605 rejects concurrent logins from the same IP — run wan+router sequentially,
-    # but in parallel with pihole and deco which hit different devices.
+    # ER605 rejects concurrent logins from the same IP — run wan+router sequentially.
+    # Pi-hole and Deco hit different devices so they run in parallel with ER605.
     async def _er605_sequential():
         w = await asyncio.to_thread(WANHealthClient(**vars(cfg.er605)).get_wan_health)
         r = await asyncio.to_thread(ER605Client(**vars(cfg.er605)).get_router_info)
         return w, r
 
+    async def _pihole_data():
+        stats, sys_info = await asyncio.gather(
+            asyncio.to_thread(PiholeClient(**vars(cfg.pihole)).get_pihole_stats),
+            asyncio.to_thread(PiholeClient(**vars(cfg.pihole)).get_pihole_system),
+            return_exceptions=True,
+        )
+        if not isinstance(sys_info, BaseException) and sys_info.get("success"):
+            for key in ("cpu_percent", "mem_percent", "uptime_seconds", "hostname"):
+                if not isinstance(stats, BaseException) and key in sys_info:
+                    stats[key] = sys_info[key]
+        return stats
+
     er605_result, pihole, mesh = await asyncio.gather(
         _er605_sequential(),
-        asyncio.to_thread(PiholeClient(**vars(cfg.pihole)).get_pihole_stats),
+        _pihole_data(),
         asyncio.to_thread(DecoClient(**vars(cfg.deco)).get_mesh_health),
         return_exceptions=True,
     )
@@ -42,6 +54,14 @@ async def snapshot(cfg: Config) -> dict:
         "pihole": pihole if not isinstance(pihole, BaseException) else {"success": False, "error": str(pihole)},
         "mesh": mesh if not isinstance(mesh, BaseException) else {"success": False, "error": str(mesh)},
         "router": router if not isinstance(router, BaseException) else {"success": False, "error": str(router)},
+    }
+
+
+async def get_hosts(cfg: Config) -> dict:
+    return {
+        "router": f"https://{cfg.er605.host}/webpages/login.html",
+        "deco": f"http://{cfg.deco.host}/webpages/index.html",
+        "pihole": "http://pi.hole/admin/login",
     }
 
 
