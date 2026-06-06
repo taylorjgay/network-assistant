@@ -531,6 +531,48 @@ async def _api_pihole_gravity(request: Request) -> JSONResponse:
     return JSONResponse(await api.pihole_gravity(_cfg))
 
 
+@mcp.custom_route("/api/pihole/top-clients", methods=["GET"])
+async def _api_pihole_top_clients(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    return JSONResponse(await api.pihole_top_clients(_cfg))
+
+
+@mcp.custom_route("/api/pihole/clients", methods=["GET"])
+async def _api_pihole_clients(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    return JSONResponse(await api.pihole_clients(_cfg))
+
+
+@mcp.custom_route("/api/pihole/domains", methods=["GET", "POST"])
+async def _api_pihole_domains(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    if request.method == "POST":
+        try:
+            body = await request.json()
+            domain = body.get("domain", "").strip()
+            if not domain:
+                return JSONResponse({"success": False, "error": "domain is required"}, status_code=400)
+            list_type = body.get("list_type", "block")
+            kind = body.get("kind", "exact")
+        except Exception:
+            return JSONResponse({"success": False, "error": "Invalid JSON body"}, status_code=400)
+        return JSONResponse(await api.pihole_add_domain(_cfg, domain, list_type, kind))
+    return JSONResponse(await api.pihole_domains(_cfg))
+
+
+@mcp.custom_route("/api/pihole/domains/{list_type}/{kind}/{domain:path}", methods=["DELETE"])
+async def _api_pihole_domain_delete(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    list_type = request.path_params["list_type"]
+    kind = request.path_params["kind"]
+    domain = request.path_params["domain"]
+    return JSONResponse(await api.pihole_remove_domain(_cfg, domain, list_type, kind))
+
+
 # Must be last — catch-all for React SPA
 @mcp.custom_route("/{path:path}", methods=["GET"])
 async def _serve_static(request: Request) -> Response:

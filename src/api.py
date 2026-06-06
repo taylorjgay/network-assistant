@@ -190,6 +190,30 @@ async def pihole_gravity(cfg: Config) -> dict:
     return await asyncio.to_thread(PiholeClient(**vars(cfg.pihole)).update_gravity)
 
 
+async def pihole_top_clients(cfg: Config) -> dict:
+    return await asyncio.to_thread(PiholeClient(**vars(cfg.pihole)).get_top_clients)
+
+
+async def pihole_clients(cfg: Config) -> dict:
+    return await asyncio.to_thread(PiholeClient(**vars(cfg.pihole)).get_clients)
+
+
+async def pihole_domains(cfg: Config) -> dict:
+    return await asyncio.to_thread(PiholeClient(**vars(cfg.pihole)).get_domain_lists)
+
+
+async def pihole_add_domain(cfg: Config, domain: str, list_type: str, kind: str) -> dict:
+    return await asyncio.to_thread(
+        PiholeClient(**vars(cfg.pihole)).add_domain, domain, list_type=list_type, kind=kind
+    )
+
+
+async def pihole_remove_domain(cfg: Config, domain: str, list_type: str, kind: str) -> dict:
+    return await asyncio.to_thread(
+        PiholeClient(**vars(cfg.pihole)).remove_domain, domain, list_type=list_type, kind=kind
+    )
+
+
 async def serve_static(request: Request) -> Response:
     path = request.path_params.get("path", "") or "index.html"
     if not _DIST.exists():

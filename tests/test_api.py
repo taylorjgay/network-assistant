@@ -117,3 +117,69 @@ def test_pihole_gravity_route():
         resp = client.post("/api/pihole/gravity")
         assert resp.status_code == 200
         assert resp.json()["success"] is True
+
+
+def test_pihole_top_clients_route():
+    with patch("src.server._cfg", _mock_cfg()), \
+         patch("src.api.PiholeClient") as mock_pihole:
+        mock_pihole.return_value.get_top_clients.return_value = {
+            "success": True,
+            "clients": [{"ip": "192.168.0.50", "name": "laptop", "count": 1234}],
+        }
+        client = TestClient(server_module.mcp.sse_app())
+        resp = client.get("/api/pihole/top-clients")
+        assert resp.status_code == 200
+        assert resp.json()["clients"][0]["ip"] == "192.168.0.50"
+
+
+def test_pihole_clients_route():
+    with patch("src.server._cfg", _mock_cfg()), \
+         patch("src.api.PiholeClient") as mock_pihole:
+        mock_pihole.return_value.get_clients.return_value = {
+            "success": True,
+            "clients": [{"ip": "192.168.0.50", "hostname": "laptop", "query_count": 5000, "last_query": 1700000000}],
+        }
+        client = TestClient(server_module.mcp.sse_app())
+        resp = client.get("/api/pihole/clients")
+        assert resp.status_code == 200
+        assert len(resp.json()["clients"]) == 1
+
+
+def test_pihole_domains_get_route():
+    with patch("src.server._cfg", _mock_cfg()), \
+         patch("src.api.PiholeClient") as mock_pihole:
+        mock_pihole.return_value.get_domain_lists.return_value = {
+            "success": True,
+            "allow": [{"domain": "t.co", "kind": "exact", "enabled": True, "comment": ""}],
+            "block": [],
+        }
+        client = TestClient(server_module.mcp.sse_app())
+        resp = client.get("/api/pihole/domains")
+        assert resp.status_code == 200
+        assert resp.json()["allow"][0]["domain"] == "t.co"
+
+
+def test_pihole_domains_post_route():
+    with patch("src.server._cfg", _mock_cfg()), \
+         patch("src.api.PiholeClient") as mock_pihole:
+        mock_pihole.return_value.add_domain.return_value = {
+            "success": True, "domain": "ads.example.com", "list_type": "block", "kind": "exact",
+        }
+        client = TestClient(server_module.mcp.sse_app())
+        resp = client.post("/api/pihole/domains", json={
+            "domain": "ads.example.com", "list_type": "block", "kind": "exact",
+        })
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+
+
+def test_pihole_domains_delete_route():
+    with patch("src.server._cfg", _mock_cfg()), \
+         patch("src.api.PiholeClient") as mock_pihole:
+        mock_pihole.return_value.remove_domain.return_value = {
+            "success": True, "domain": "ads.example.com", "list_type": "block", "kind": "exact",
+        }
+        client = TestClient(server_module.mcp.sse_app())
+        resp = client.delete("/api/pihole/domains/block/exact/ads.example.com")
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
