@@ -1,14 +1,87 @@
+import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { formatDistanceToNow } from 'date-fns'
 import { api } from '@/lib/api'
 import { formatUptime } from '@/lib/utils'
-import type { TopClientsResult, PiholeClientsResult } from '@/lib/types'
+import type { TopClientsResult, PiholeClientsResult, DomainLists } from '@/lib/types'
 import { Switch } from '@/components/ui/switch'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+} from '@/components/ui/dialog'
+
+function AddDomainDialog({ onAdded }: { onAdded: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [domain, setDomain] = useState('')
+  const [listType, setListType] = useState('block')
+  const [kind, setKind] = useState('exact')
+
+  const handleAdd = async () => {
+    if (!domain.trim()) return
+    try {
+      await api.addDomain(domain.trim(), listType, kind)
+      toast.success(`Added ${domain.trim()} to ${listType}list`)
+      onAdded()
+      setOpen(false)
+      setDomain('')
+    } catch {
+      toast.error('Failed to add domain')
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" className="h-7 text-xs">+ Add Domain</Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add Domain to Pi-hole List</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 pt-2">
+          <div className="space-y-1">
+            <Label>Domain</Label>
+            <Input
+              value={domain}
+              onChange={e => setDomain(e.target.value)}
+              placeholder="ads.example.com"
+              onKeyDown={e => e.key === 'Enter' && handleAdd()}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>List</Label>
+            <select
+              className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+              value={listType}
+              onChange={e => setListType(e.target.value)}
+            >
+              <option value="block">Blocklist</option>
+              <option value="allow">Allowlist</option>
+            </select>
+          </div>
+          <div className="space-y-1">
+            <Label>Type</Label>
+            <select
+              className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+              value={kind}
+              onChange={e => setKind(e.target.value)}
+            >
+              <option value="exact">Exact</option>
+              <option value="regex">Regex</option>
+            </select>
+          </div>
+          <Button onClick={handleAdd} className="w-full">Add</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 export default function DnsPage() {
   const queryClient = useQueryClient()
@@ -38,6 +111,11 @@ export default function DnsPage() {
   const { data: allClients, isLoading: allClientsLoading, refetch: refetchAllClients } = useQuery<PiholeClientsResult>({
     queryKey: ['pihole-clients'],
     queryFn: api.getPiholeClients,
+  })
+
+  const { data: domainLists, isLoading: domainListsLoading, refetch: refetchDomains } = useQuery<DomainLists>({
+    queryKey: ['pihole-domains'],
+    queryFn: api.getDomainLists,
   })
 
   const handleToggleBlocking = async (checked: boolean) => {
@@ -224,6 +302,62 @@ export default function DnsPage() {
           </Table>
         ) : (
           <div className="text-sm text-muted-foreground">{allClients?.error ?? 'Could not load clients'}</div>
+        )}
+      </div>
+
+      {/* Domain Allow/Block Manager */}
+      <div className="rounded-lg border border-border bg-card p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium">Domain Lists</h3>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => refetchDomains()}>↻</Button>
+            <AddDomainDialog onAdded={() => refetchDomains()} />
+          </div>
+        </div>
+        {domainListsLoading ? (
+          <div className="text-sm text-muted-foreground">Loading...</div>
+        ) : domainLists?.success ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {(['allow', 'block'] as const).map(listType => (
+              <div key={listType}>
+                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
+                  {listType === 'allow' ? 'Allowlist' : 'Blocklist'} ({(domainLists[listType] ?? []).length})
+                </div>
+                {(domainLists[listType] ?? []).length === 0 ? (
+                  <div className="text-xs text-muted-foreground">Empty</div>
+                ) : (
+                  <div className="space-y-1">
+                    {(domainLists[listType] ?? []).map((entry, i) => (
+                      <div key={i} className="flex items-center justify-between gap-2 rounded-md border border-border px-2 py-1">
+                        <div className="min-w-0">
+                          <span className="text-xs font-mono truncate block">{entry.domain}</span>
+                          {entry.kind === 'regex' && <span className="text-xs text-muted-foreground">regex</span>}
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-2 text-xs text-red-500 hover:text-red-600 shrink-0"
+                          onClick={async () => {
+                            try {
+                              await api.removeDomain(listType, entry.kind, entry.domain)
+                              toast.success(`Removed ${entry.domain}`)
+                              refetchDomains()
+                            } catch {
+                              toast.error('Failed to remove domain')
+                            }
+                          }}
+                        >
+                          ✕
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-sm text-muted-foreground">{domainLists?.error ?? 'Could not load domain lists'}</div>
         )}
       </div>
 
