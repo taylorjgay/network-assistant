@@ -7,15 +7,17 @@ import OverviewPage from '@/pages/OverviewPage'
 import NetworkPage from '@/pages/NetworkPage'
 import DnsPage from '@/pages/DnsPage'
 import FirewallPage from '@/pages/FirewallPage'
+import DiagnosticsPage from '@/pages/DiagnosticsPage'
 import { cn } from '@/lib/utils'
 
-type Tab = 'overview' | 'network' | 'dns' | 'firewall'
+type Tab = 'overview' | 'network' | 'dns' | 'firewall' | 'diagnostics'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'network', label: 'Network' },
   { id: 'dns', label: 'DNS' },
   { id: 'firewall', label: 'Firewall' },
+  { id: 'diagnostics', label: 'Diagnostics' },
 ]
 
 export default function App() {
@@ -66,6 +68,7 @@ export default function App() {
         {activeTab === 'network' && <NetworkPage />}
         {activeTab === 'dns' && <DnsPage />}
         {activeTab === 'firewall' && <FirewallPage />}
+        {activeTab === 'diagnostics' && <DiagnosticsPage />}
       </main>
     </div>
   )
