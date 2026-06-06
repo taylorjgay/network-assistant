@@ -123,7 +123,7 @@ class DeviceInventory:
 
     def _parse_arp_cache(self) -> list[dict]:
         try:
-            result = subprocess.run(['arp', '-a'], capture_output=True, text=True, timeout=5)
+            result = subprocess.run(['arp', '-an'], capture_output=True, text=True, timeout=5)
             devices = []
             for line in result.stdout.splitlines():
                 m = re.search(

@@ -165,7 +165,11 @@ export default function FirewallPage() {
             </Table>
           )
         ) : (
-          <div className="text-sm text-muted-foreground">{ports?.error ?? 'Could not load rules'}</div>
+          <div className="text-sm text-muted-foreground">
+            {ports?.error?.includes('1014')
+              ? <>Port forward API not available on standalone ER605 firmware. Manage rules in the <a href="https://192.168.0.1/webpages/login.html" target="_blank" rel="noreferrer" className="underline">ER605 web UI</a>.</>
+              : (ports?.error ?? 'Could not load rules')}
+          </div>
         )}
       </div>
 

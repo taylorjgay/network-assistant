@@ -176,8 +176,11 @@ class PiholeClient:
                             "suggestion": "Check api_token in config.json", "attempted": url}
                 resp = c.get(url, headers={"X-FTL-SID": sid}, params=params)
                 resp.raise_for_status()
-                raw = resp.json().get("domains", {})
-            domains = [{"domain": k, "count": v} for k, v in sorted(raw.items(), key=lambda x: -x[1])]
+                raw = resp.json().get("domains", [])
+            if isinstance(raw, dict):
+                domains = [{"domain": k, "count": v} for k, v in sorted(raw.items(), key=lambda x: -x[1])]
+            else:
+                domains = sorted(raw, key=lambda x: -x.get("count", 0))
             return {"success": True, "domains": domains, "blocked_filter": blocked}
         except httpx.HTTPStatusError as e:
             return {"success": False, "error": f"HTTP {e.response.status_code}",
