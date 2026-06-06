@@ -1,7 +1,13 @@
 import pytest
 import respx
 import httpx
+import src.tools.pihole as pihole_module
 from src.tools.pihole import PiholeClient
+
+
+@pytest.fixture(autouse=True)
+def clear_sid_cache():
+    pihole_module._sid_cache.clear()
 
 
 @pytest.fixture
