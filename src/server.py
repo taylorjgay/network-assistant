@@ -471,7 +471,7 @@ async def _api_ping(request: Request) -> JSONResponse:
         host = body.get("host", "").strip()
         if not host:
             return JSONResponse({"success": False, "error": "host is required"}, status_code=400)
-        count = int(body.get("count", 4))
+        count = max(1, min(20, int(body.get("count", 4))))
     except Exception:
         return JSONResponse({"success": False, "error": "Invalid JSON body"}, status_code=400)
     return JSONResponse(await api.diag_ping(host, count))
