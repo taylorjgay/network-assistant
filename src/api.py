@@ -10,6 +10,12 @@ from src.tools.devices import DeviceInventory
 from src.tools.er605 import ER605Client
 from src.tools.pihole import PiholeClient
 from src.tools.upnp import get_upnp_portmaps, get_upnp_status
+from src.tools.diagnostics import (
+    ping_host as _ping_host,
+    traceroute_host as _traceroute_host,
+    run_speedtest as _run_speedtest,
+    test_dns_resolution as _test_dns_resolution,
+)
 from src.tools.wan_health import WANHealthClient
 
 _LABELS_PATH = Path(__file__).parent.parent / "devices.json"
@@ -157,6 +163,22 @@ async def do_remove_port_forward(cfg: Config, rule_id: str) -> dict:
     return await asyncio.to_thread(
         ER605Client(**vars(cfg.er605)).remove_port_forward, rule_id, dry_run=False
     )
+
+
+async def diag_ping(host: str, count: int = 4) -> dict:
+    return await asyncio.to_thread(_ping_host, host, count)
+
+
+async def diag_traceroute(host: str) -> dict:
+    return await asyncio.to_thread(_traceroute_host, host)
+
+
+async def diag_speedtest() -> dict:
+    return await asyncio.to_thread(_run_speedtest)
+
+
+async def diag_dns(hostname: str) -> dict:
+    return await asyncio.to_thread(_test_dns_resolution, hostname)
 
 
 async def serve_static(request: Request) -> Response:

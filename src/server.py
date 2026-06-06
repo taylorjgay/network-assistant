@@ -462,6 +462,56 @@ async def _api_ports_remove(request: Request) -> JSONResponse:
     return JSONResponse(await api.do_remove_port_forward(_cfg, request.path_params["rule_id"]))
 
 
+@mcp.custom_route("/api/diagnostics/ping", methods=["POST"])
+async def _api_ping(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    try:
+        body = await request.json()
+        host = body.get("host", "").strip()
+        if not host:
+            return JSONResponse({"success": False, "error": "host is required"}, status_code=400)
+        count = int(body.get("count", 4))
+    except Exception:
+        return JSONResponse({"success": False, "error": "Invalid JSON body"}, status_code=400)
+    return JSONResponse(await api.diag_ping(host, count))
+
+
+@mcp.custom_route("/api/diagnostics/traceroute", methods=["POST"])
+async def _api_traceroute(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    try:
+        body = await request.json()
+        host = body.get("host", "").strip()
+        if not host:
+            return JSONResponse({"success": False, "error": "host is required"}, status_code=400)
+    except Exception:
+        return JSONResponse({"success": False, "error": "Invalid JSON body"}, status_code=400)
+    return JSONResponse(await api.diag_traceroute(host))
+
+
+@mcp.custom_route("/api/diagnostics/speedtest", methods=["POST"])
+async def _api_speedtest(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    return JSONResponse(await api.diag_speedtest())
+
+
+@mcp.custom_route("/api/diagnostics/dns", methods=["POST"])
+async def _api_dns(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    try:
+        body = await request.json()
+        hostname = body.get("hostname", "").strip()
+        if not hostname:
+            return JSONResponse({"success": False, "error": "hostname is required"}, status_code=400)
+    except Exception:
+        return JSONResponse({"success": False, "error": "Invalid JSON body"}, status_code=400)
+    return JSONResponse(await api.diag_dns(hostname))
+
+
 # Must be last — catch-all for React SPA
 @mcp.custom_route("/{path:path}", methods=["GET"])
 async def _serve_static(request: Request) -> Response:
