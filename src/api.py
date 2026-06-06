@@ -17,6 +17,7 @@ from src.tools.diagnostics import (
     test_dns_resolution as _test_dns_resolution,
 )
 from src.tools.wan_health import WANHealthClient
+from src.tools.wan_speed import WANSpeedClient
 
 _LABELS_PATH = Path(__file__).parent.parent / "devices.json"
 _DIST = Path(__file__).parent.parent / "dashboard" / "dist"
@@ -179,6 +180,14 @@ async def diag_speedtest() -> dict:
 
 async def diag_dns(hostname: str) -> dict:
     return await asyncio.to_thread(_test_dns_resolution, hostname)
+
+
+async def wan_speed_compare(cfg: Config, quick: bool = True) -> dict:
+    return await asyncio.to_thread(WANSpeedClient(**vars(cfg.er605)).compare_wan_speed, quick)
+
+
+async def pihole_gravity(cfg: Config) -> dict:
+    return await asyncio.to_thread(PiholeClient(**vars(cfg.pihole)).update_gravity)
 
 
 async def serve_static(request: Request) -> Response:

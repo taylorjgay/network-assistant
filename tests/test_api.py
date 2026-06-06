@@ -88,3 +88,32 @@ def test_dns_lookup_route_success():
         resp = client.post("/api/diagnostics/dns", json={"hostname": "example.com"})
         assert resp.status_code == 200
         assert resp.json()["addresses"] == ["93.184.216.34"]
+
+
+def test_wan_speed_compare_route():
+    with patch("src.server._cfg", _mock_cfg()), \
+         patch("src.api.WANSpeedClient") as mock_speed:
+        mock_speed.return_value.compare_wan_speed.return_value = {
+            "success": True, "quick": True,
+            "wan1": {"latency_ms": 12.0, "packet_loss_pct": 0.0},
+            "wan2": {"latency_ms": 28.0, "packet_loss_pct": 0.0},
+            "recommendation": "WAN1 recommended — 2.3× lower latency",
+            "restored": True,
+        }
+        client = TestClient(server_module.mcp.sse_app())
+        resp = client.post("/api/wan/speed/compare", json={"quick": True})
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        assert resp.json()["recommendation"] == "WAN1 recommended — 2.3× lower latency"
+
+
+def test_pihole_gravity_route():
+    with patch("src.server._cfg", _mock_cfg()), \
+         patch("src.api.PiholeClient") as mock_pihole:
+        mock_pihole.return_value.update_gravity.return_value = {
+            "success": True, "message": "Gravity update triggered — runs in background on Pi-hole",
+        }
+        client = TestClient(server_module.mcp.sse_app())
+        resp = client.post("/api/pihole/gravity")
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True

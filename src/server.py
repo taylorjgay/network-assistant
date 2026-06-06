@@ -512,6 +512,25 @@ async def _api_dns(request: Request) -> JSONResponse:
     return JSONResponse(await api.diag_dns(hostname))
 
 
+@mcp.custom_route("/api/wan/speed/compare", methods=["POST"])
+async def _api_wan_speed_compare(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    try:
+        body = await request.json()
+        quick = bool(body.get("quick", True))
+    except Exception:
+        quick = True
+    return JSONResponse(await api.wan_speed_compare(_cfg, quick))
+
+
+@mcp.custom_route("/api/pihole/gravity", methods=["POST"])
+async def _api_pihole_gravity(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    return JSONResponse(await api.pihole_gravity(_cfg))
+
+
 # Must be last — catch-all for React SPA
 @mcp.custom_route("/{path:path}", methods=["GET"])
 async def _serve_static(request: Request) -> Response:
