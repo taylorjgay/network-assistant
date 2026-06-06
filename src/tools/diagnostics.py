@@ -93,6 +93,11 @@ def test_dns_resolution(hostname: str, dns_server: str = None) -> dict:
 def run_speedtest() -> dict:
     """Run an internet speed test."""
     try:
+        import ssl, certifi
+        ssl._create_default_https_context = lambda: ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        pass
+    try:
         import speedtest
         st = speedtest.Speedtest(secure=True)
         st.get_best_server()

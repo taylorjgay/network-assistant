@@ -369,16 +369,16 @@ class PiholeClient:
             return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
 
     def update_gravity(self) -> dict:
-        url = f"{self._base}/gravity"
+        url = f"http://{self.host}/api/action/gravity"
         try:
-            with httpx.Client(timeout=15) as c:
+            with httpx.Client(timeout=120) as c:
                 sid = self._get_sid(c)
                 if sid is None:
                     return {"success": False, "error": "Authentication failed",
                             "suggestion": "Check api_token in config.json", "attempted": url}
                 resp = c.post(url, headers={"X-FTL-SID": sid})
                 resp.raise_for_status()
-            return {"success": True, "message": "Gravity update triggered — runs in background on Pi-hole"}
+            return {"success": True, "message": "Gravity updated successfully"}
         except httpx.HTTPStatusError as e:
             return {"success": False, "error": f"HTTP {e.response.status_code}",
                     "suggestion": "Check Pi-hole host in config.json", "attempted": url}

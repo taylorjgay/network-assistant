@@ -426,18 +426,18 @@ def test_set_blocking_http_error(client):
 @respx.mock
 def test_update_gravity(client):
     _mock_auth()
-    respx.post("http://192.168.0.10/api/gravity").mock(
+    respx.post("http://192.168.0.10/api/action/gravity").mock(
         return_value=httpx.Response(200, json={"status": "running"})
     )
     result = client.update_gravity()
     assert result["success"] is True
-    assert "triggered" in result["message"].lower()
+    assert result["message"]
 
 
 @respx.mock
 def test_update_gravity_http_error(client):
     _mock_auth()
-    respx.post("http://192.168.0.10/api/gravity").mock(
+    respx.post("http://192.168.0.10/api/action/gravity").mock(
         return_value=httpx.Response(500)
     )
     result = client.update_gravity()

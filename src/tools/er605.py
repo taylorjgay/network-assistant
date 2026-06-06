@@ -35,7 +35,10 @@ class ER605Client:
 
     def _post_form(self, client: httpx.Client, url: str, payload: dict) -> dict:
         resp = client.post(url, data={"data": json.dumps(payload)}, headers=self._headers())
-        return resp.json()
+        try:
+            return resp.json()
+        except ValueError:
+            return {"error_code": "1014", "_empty_body": True}
 
     def _get_uptime(self, client: httpx.Client, step1_result: dict) -> str:
         """Get uptime for password encryption from locale endpoint (operation=read format)."""
