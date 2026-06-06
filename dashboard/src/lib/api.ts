@@ -1,6 +1,9 @@
 import type {
   Snapshot, WANHealth, QueryTrends, TopDomainsResult, PiholeStats,
   PiholeSystem, MeshHealth, DeviceList, UPnPResult, PortForwards,
+  PingResult, TracerouteResult, SpeedtestResult, DnsLookupResult,
+  WANSpeedCompare, GravityResult,
+  TopClientsResult, PiholeClientsResult, DomainLists,
 } from './types'
 
 async function get<T>(path: string): Promise<T> {
@@ -56,4 +59,30 @@ export const api = {
   }) => post<unknown>('/ports', data),
   removePortForward: (ruleId: string) =>
     del<unknown>(`/ports/${encodeURIComponent(ruleId)}`),
+
+  // Diagnostics
+  ping: (host: string, count?: number) =>
+    post<PingResult>('/diagnostics/ping', { host, count: count ?? 4 }),
+  traceroute: (host: string) =>
+    post<TracerouteResult>('/diagnostics/traceroute', { host }),
+  speedtest: () =>
+    post<SpeedtestResult>('/diagnostics/speedtest'),
+  dnsLookup: (hostname: string) =>
+    post<DnsLookupResult>('/diagnostics/dns', { hostname }),
+  compareWanSpeed: (quick: boolean) =>
+    post<WANSpeedCompare>('/wan/speed/compare', { quick }),
+  updateGravity: () =>
+    post<GravityResult>('/pihole/gravity'),
+
+  // DNS page extras
+  getPiholeTopClients: () =>
+    get<TopClientsResult>('/pihole/top-clients'),
+  getPiholeClients: () =>
+    get<PiholeClientsResult>('/pihole/clients'),
+  getDomainLists: () =>
+    get<DomainLists>('/pihole/domains'),
+  addDomain: (domain: string, list_type: string, kind: string) =>
+    post<{ success: boolean; error?: string }>('/pihole/domains', { domain, list_type, kind }),
+  removeDomain: (list_type: string, kind: string, domain: string) =>
+    del<{ success: boolean; error?: string }>(`/pihole/domains/${encodeURIComponent(list_type)}/${encodeURIComponent(kind)}/${encodeURIComponent(domain)}`),
 }

@@ -167,3 +167,129 @@ export interface PortForwards {
   rules: PortForward[]
   error?: string
 }
+
+export interface PingResult {
+  success: boolean
+  host: string
+  packets_sent?: number
+  packet_loss_pct?: number
+  avg_ms?: number | null
+  reachable?: boolean
+  error?: string
+  suggestion?: string
+}
+
+export interface TracerouteHop {
+  hop: number
+  ip: string | null
+  ms: number | null
+  timeout?: boolean
+}
+
+export interface TracerouteResult {
+  success: boolean
+  host: string
+  hops: TracerouteHop[]
+  raw?: string
+  error?: string
+  suggestion?: string
+}
+
+export interface SpeedtestResult {
+  success: boolean
+  download_mbps?: number
+  upload_mbps?: number
+  ping_ms?: number
+  server?: string
+  server_location?: string
+  error?: string
+  suggestion?: string
+}
+
+export interface DnsLookupResult {
+  success: boolean
+  hostname: string
+  dns_server?: string
+  addresses?: string[]
+  elapsed_ms?: number
+  error?: string
+  suggestion?: string
+}
+
+export interface WANProbeResult {
+  avg_latency_ms: number | null
+  packet_loss_pct: number
+  degraded: boolean
+}
+
+export interface WANHealthCompare {
+  success: boolean
+  wan1_probe?: WANProbeResult | null
+  wan2_probe?: WANProbeResult | null
+  recommendation?: string
+  restored?: boolean
+  error?: string
+}
+
+export interface WANSpeedMeasure {
+  latency_ms?: number | null
+  packet_loss_pct?: number
+  download_mbps?: number
+  upload_mbps?: number
+  server?: string
+}
+
+export interface WANSpeedCompare {
+  success: boolean
+  quick: boolean
+  wan1?: WANSpeedMeasure | null
+  wan2?: WANSpeedMeasure | null
+  recommendation?: string
+  restored?: boolean
+  error?: string
+}
+
+export interface GravityResult {
+  success: boolean
+  message?: string
+  error?: string
+}
+
+export interface TopClient {
+  ip: string
+  name: string
+  count: number
+}
+
+export interface TopClientsResult {
+  success: boolean
+  clients: TopClient[]
+  error?: string
+}
+
+export interface PiholeClientEntry {
+  ip: string
+  hostname: string
+  query_count: number
+  last_query: number
+}
+
+export interface PiholeClientsResult {
+  success: boolean
+  clients: PiholeClientEntry[]
+  error?: string
+}
+
+export interface PiholeDomainListEntry {
+  domain: string
+  kind: 'exact' | 'regex'
+  enabled: boolean
+  comment: string
+}
+
+export interface DomainLists {
+  success: boolean
+  allow: PiholeDomainListEntry[]
+  block: PiholeDomainListEntry[]
+  error?: string
+}
