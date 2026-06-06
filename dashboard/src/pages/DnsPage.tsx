@@ -1,7 +1,9 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { formatDistanceToNow } from 'date-fns'
 import { api } from '@/lib/api'
 import { formatUptime } from '@/lib/utils'
+import type { TopClientsResult, PiholeClientsResult } from '@/lib/types'
 import { Switch } from '@/components/ui/switch'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -28,6 +30,16 @@ export default function DnsPage() {
     queryFn: api.getPiholeTopDomains,
   })
 
+  const { data: topClients, isLoading: topClientsLoading, refetch: refetchTopClients } = useQuery<TopClientsResult>({
+    queryKey: ['pihole-top-clients'],
+    queryFn: api.getPiholeTopClients,
+  })
+
+  const { data: allClients, isLoading: allClientsLoading, refetch: refetchAllClients } = useQuery<PiholeClientsResult>({
+    queryKey: ['pihole-clients'],
+    queryFn: api.getPiholeClients,
+  })
+
   const handleToggleBlocking = async (checked: boolean) => {
     if (!stats?.success) return
     try {
@@ -46,6 +58,19 @@ export default function DnsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Pi-hole system */}
+      {system?.success && (
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h3 className="text-sm font-medium mb-3">Pi-hole System (Raspberry Pi)</h3>
+          <div className="flex gap-6 text-sm">
+            <div><span className="text-muted-foreground">CPU (1m):</span> {system.cpu_load_1m.toFixed(2)}</div>
+            <div><span className="text-muted-foreground">CPU (5m):</span> {system.cpu_load_5m.toFixed(2)}</div>
+            <div><span className="text-muted-foreground">RAM:</span> {ramPct}% ({system.ram_used_mb} / {system.ram_total_mb} MB)</div>
+            <div><span className="text-muted-foreground">Uptime:</span> {formatUptime(system.uptime_seconds)}</div>
+          </div>
+        </div>
+      )}
+
       {/* Pi-hole stats bar */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div className="rounded-lg border border-border bg-card p-4">
@@ -132,18 +157,76 @@ export default function DnsPage() {
         </div>
       </div>
 
-      {/* Pi-hole system */}
-      {system?.success && (
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h3 className="text-sm font-medium mb-3">Pi-hole System ({system.hostname})</h3>
-          <div className="flex gap-6 text-sm">
-            <div><span className="text-muted-foreground">CPU (1m):</span> {system.cpu_load_1m.toFixed(2)}</div>
-            <div><span className="text-muted-foreground">CPU (5m):</span> {system.cpu_load_5m.toFixed(2)}</div>
-            <div><span className="text-muted-foreground">RAM:</span> {ramPct}% ({system.ram_used_mb} / {system.ram_total_mb} MB)</div>
-            <div><span className="text-muted-foreground">Uptime:</span> {formatUptime(system.uptime_seconds)}</div>
-          </div>
+      {/* Top Pi-hole clients */}
+      <div className="rounded-lg border border-border bg-card p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium">Top Clients Today</h3>
+          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => refetchTopClients()}>↻</Button>
         </div>
-      )}
+        {topClientsLoading ? (
+          <div className="text-sm text-muted-foreground">Loading...</div>
+        ) : topClients?.success ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs">IP</TableHead>
+                <TableHead className="text-xs">Hostname</TableHead>
+                <TableHead className="text-xs text-right">Queries</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(topClients.clients ?? []).map((c, i) => (
+                <TableRow key={i}>
+                  <TableCell className="text-xs font-mono">{c.ip}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{c.name || '—'}</TableCell>
+                  <TableCell className="text-xs text-right">{c.count.toLocaleString()}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : (
+          <div className="text-sm text-muted-foreground">{topClients?.error ?? 'Could not load clients'}</div>
+        )}
+      </div>
+
+      {/* Pi-hole known clients (all-time) */}
+      <div className="rounded-lg border border-border bg-card p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium">Known Clients</h3>
+          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => refetchAllClients()}>↻</Button>
+        </div>
+        {allClientsLoading ? (
+          <div className="text-sm text-muted-foreground">Loading...</div>
+        ) : allClients?.success ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs">IP</TableHead>
+                <TableHead className="text-xs">Hostname</TableHead>
+                <TableHead className="text-xs text-right">Total Queries</TableHead>
+                <TableHead className="text-xs text-right">Last Seen</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(allClients.clients ?? [])
+                .sort((a, b) => b.query_count - a.query_count)
+                .map((c, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="text-xs font-mono">{c.ip}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{c.hostname || '—'}</TableCell>
+                    <TableCell className="text-xs text-right">{c.query_count.toLocaleString()}</TableCell>
+                    <TableCell className="text-xs text-right text-muted-foreground">
+                      {c.last_query ? formatDistanceToNow(new Date(c.last_query * 1000), { addSuffix: true }) : '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+            </TableBody>
+          </Table>
+        ) : (
+          <div className="text-sm text-muted-foreground">{allClients?.error ?? 'Could not load clients'}</div>
+        )}
+      </div>
+
     </div>
   )
 }
