@@ -47,7 +47,7 @@ cp config.example.json config.json
 .venv/bin/python -m src.server
 ```
 
-The server runs on `http://localhost:8000/sse` (SSE transport).
+The server runs on `http://localhost:8000/mcp` (streamable-HTTP transport).
 
 **4. Connect Claude Code:**
 

@@ -1,6 +1,7 @@
 import json
 import re
 import subprocess
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,6 +13,7 @@ from src.tools.deco import DecoClient
 from src.tools.pihole import PiholeClient
 
 _mac_lookup = MacLookup()
+_labels_lock = threading.Lock()
 
 
 def _normalize_mac(mac: str) -> Optional[str]:
@@ -86,9 +88,10 @@ class DeviceInventory:
                 "error": f"Invalid MAC address format '{mac}'",
                 "suggestion": "Use format AA:BB:CC:DD:EE:FF",
             }
-        labels = self._load_labels()
-        labels[normalized] = label
-        self._save_labels(labels)
+        with _labels_lock:
+            labels = self._load_labels()
+            labels[normalized] = label
+            self._save_labels(labels)
         return {"success": True, "mac": normalized, "label": label}
 
     def remove_device_label(self, mac: str) -> dict:
@@ -99,15 +102,16 @@ class DeviceInventory:
                 "error": f"Invalid MAC address format '{mac}'",
                 "suggestion": "Use format AA:BB:CC:DD:EE:FF",
             }
-        labels = self._load_labels()
-        if normalized not in labels:
-            return {
-                "success": False,
-                "error": f"No label found for {normalized}",
-                "suggestion": "Use label_device to add a label first",
-            }
-        del labels[normalized]
-        self._save_labels(labels)
+        with _labels_lock:
+            labels = self._load_labels()
+            if normalized not in labels:
+                return {
+                    "success": False,
+                    "error": f"No label found for {normalized}",
+                    "suggestion": "Use label_device to add a label first",
+                }
+            del labels[normalized]
+            self._save_labels(labels)
         return {"success": True, "mac": normalized}
 
     def _load_labels(self) -> dict:

@@ -81,6 +81,12 @@ function formatBackhaul(backhaul: string[] | null, isPrimary: boolean): string {
     .join(' + ')
 }
 
+function isRandomizedMac(mac: string | null): boolean {
+  if (!mac) return false
+  const firstOctet = parseInt(mac.split(':')[0], 16)
+  return (firstOctet & 0x02) === 0x02
+}
+
 function signalQuality(dbm: number | null): { label: string; className: string } | null {
   if (dbm == null) return null
   if (dbm >= -50) return { label: 'Excellent', className: 'text-green-500' }
@@ -229,7 +235,13 @@ export default function NetworkPage() {
                 <TableRow key={device.ip}>
                   <TableCell className="text-xs font-mono">{device.ip}</TableCell>
                   <TableCell className="text-xs">
-                    <span>{device.label ?? device.hostname ?? '—'}</span>
+                    {device.label ?? device.hostname ? (
+                      <span>{device.label ?? device.hostname}</span>
+                    ) : isRandomizedMac(device.mac) ? (
+                      <span className="text-muted-foreground italic">Randomized MAC</span>
+                    ) : (
+                      <span>—</span>
+                    )}
                     {device.label && device.hostname && (
                       <span className="text-muted-foreground ml-1">({device.hostname})</span>
                     )}
