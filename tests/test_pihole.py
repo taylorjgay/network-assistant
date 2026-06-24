@@ -229,6 +229,25 @@ def test_get_top_clients(client):
 
 
 @respx.mock
+def test_get_top_clients_list_format(client):
+    _mock_auth()
+    respx.get("http://192.168.0.10/api/stats/top_clients").mock(
+        return_value=httpx.Response(200, json={
+            "clients": [
+                {"ip": "192.168.0.50", "name": "mypc", "count": 800},
+                {"ip": "192.168.0.51", "name": "phone", "count": 400},
+            ],
+        })
+    )
+    result = client.get_top_clients(count=10)
+    assert result["success"] is True
+    assert len(result["clients"]) == 2
+    assert result["clients"][0]["ip"] == "192.168.0.50"
+    assert result["clients"][0]["name"] == "mypc"
+    assert result["clients"][0]["count"] == 800
+
+
+@respx.mock
 def test_get_top_clients_connect_error(client):
     respx.post("http://192.168.0.10/api/auth").mock(
         side_effect=httpx.ConnectError("refused")

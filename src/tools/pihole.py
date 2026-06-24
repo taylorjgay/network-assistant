@@ -201,11 +201,14 @@ class PiholeClient:
                             "suggestion": "Check api_token in config.json", "attempted": url}
                 resp = c.get(url, headers={"X-FTL-SID": sid}, params={"count": count})
                 resp.raise_for_status()
-                raw = resp.json().get("clients", {})
-            clients = []
-            for key, cnt in sorted(raw.items(), key=lambda x: -x[1]):
-                ip, _, name = key.partition("|")
-                clients.append({"ip": ip, "name": name, "count": cnt})
+                raw = resp.json().get("clients", [])
+            if isinstance(raw, dict):
+                clients = []
+                for key, cnt in sorted(raw.items(), key=lambda x: -x[1]):
+                    ip, _, name = key.partition("|")
+                    clients.append({"ip": ip, "name": name, "count": cnt})
+            else:
+                clients = sorted(raw, key=lambda x: -x.get("count", 0))
             return {"success": True, "clients": clients}
         except httpx.HTTPStatusError as e:
             return {"success": False, "error": f"HTTP {e.response.status_code}",

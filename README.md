@@ -4,6 +4,14 @@ A Python MCP server and React dashboard for managing a home network through Clau
 
 > **Why this project exists:** None of these devices have official APIs. Getting all three talking to Python meant reverse-engineering each authentication scheme from scratch — bare RSA (no padding) for the ER605, a 3-step RSA + AES handshake with a session token bound to a specific TCP connection for the Deco, and Pi-hole v6's session-based auth that changed between minor versions. The interesting parts are documented in [API Notes](#api-notes--hard-won-quirks) below.
 
+## MCP Interface
+
+Ask Claude about your network in plain English. It calls the right tools and returns a structured answer.
+
+![Health check — router, mesh nodes, Pi-hole at a glance](docs/screenshots/MCP_health_check.png)
+
+![Anomaly scan — DNS trends, top domains, and blocked traffic analysis](docs/screenshots/MCP_unusual_activity.png)
+
 ## Dashboard
 
 ![Overview — live WAN status, mesh nodes, Pi-hole stats](docs/screenshots/Overview.png)
