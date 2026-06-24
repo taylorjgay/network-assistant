@@ -5,7 +5,7 @@
 
 ## Context
 
-The ER605 manages dual-WAN failover (WAN1: NOVOS fiber, WAN2: T-Mobile 5G), but the MCP server has no way to check whether either WAN is actually healthy — only whether a link is up. This spec adds two tools: a safe always-on health snapshot (`get_wan_health`) and a deliberate investigation tool (`compare_wan_health`) that probes both WANs independently when degradation is suspected.
+The ER605 manages dual-WAN failover (WAN1: fiber ISP, WAN2: cellular failover), but the MCP server has no way to check whether either WAN is actually healthy — only whether a link is up. This spec adds two tools: a safe always-on health snapshot (`get_wan_health`) and a deliberate investigation tool (`compare_wan_health`) that probes both WANs independently when degradation is suspected.
 
 ## Architecture
 
@@ -24,15 +24,15 @@ Always safe. Pulls per-interface stats from the ER605 API for both WANs, then co
     "active_wan": "WAN1",
     "wan1": {
         "link": "up",
-        "ip": "192.168.1.70",
-        "gateway": "192.168.1.254",
+        "ip": "10.0.1.70",
+        "gateway": "10.0.1.254",
         "bytes_in": 1234567890,
         "bytes_out": 987654321
     },
     "wan2": {
         "link": "up",
-        "ip": "192.168.12.153",
-        "gateway": "192.168.12.1",
+        "ip": "172.16.12.153",
+        "gateway": "172.16.12.1",
         "bytes_in": 12345678,
         "bytes_out": 9876543
     },

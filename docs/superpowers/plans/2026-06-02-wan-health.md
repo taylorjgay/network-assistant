@@ -31,9 +31,9 @@
 {
     "success": True,
     "interfaces": [
-        {"name": "WAN1", "up": True, "ip": "192.168.1.70", "proto": "dhcp",
-         "gateway": "192.168.1.254", "dns1": "8.8.8.8"},
-        {"name": "WAN2", "up": True, "ip": "192.168.12.153", ...},
+        {"name": "WAN1", "up": True, "ip": "10.0.1.70", "proto": "dhcp",
+         "gateway": "10.0.1.254", "dns1": "8.8.8.8"},
+        {"name": "WAN2", "up": True, "ip": "172.16.12.153", ...},
     ]
 }
 ```
@@ -83,11 +83,11 @@ def _iface_result(wan1_up=True, wan2_up=True):
         "success": True,
         "interfaces": [
             {"name": "WAN1", "up": wan1_up,
-             "ip": "192.168.1.70" if wan1_up else "",
-             "gateway": "192.168.1.254", "proto": "dhcp", "dns1": "8.8.8.8"},
+             "ip": "10.0.1.70" if wan1_up else "",
+             "gateway": "10.0.1.254", "proto": "dhcp", "dns1": "8.8.8.8"},
             {"name": "WAN2", "up": wan2_up,
-             "ip": "192.168.12.153" if wan2_up else "",
-             "gateway": "192.168.12.1", "proto": "dhcp", "dns1": "8.8.8.8"},
+             "ip": "172.16.12.153" if wan2_up else "",
+             "gateway": "172.16.12.1", "proto": "dhcp", "dns1": "8.8.8.8"},
         ],
     }
 
@@ -117,7 +117,7 @@ def test_get_wan_health_success(client):
     assert result["success"] is True
     assert result["active_wan"] == "WAN1"
     assert result["wan1"]["link"] == "up"
-    assert result["wan1"]["ip"] == "192.168.1.70"
+    assert result["wan1"]["ip"] == "10.0.1.70"
     assert result["wan2"]["link"] == "up"
     assert result["probe"]["avg_latency_ms"] == 14.2
     assert result["probe"]["packet_loss_pct"] == 0.0
@@ -171,7 +171,7 @@ def test_get_wan_health_partial_interface_data(client):
     partial = {
         "success": True,
         "interfaces": [
-            {"name": "WAN1", "up": True, "ip": "192.168.1.70", "gateway": "192.168.1.254",
+            {"name": "WAN1", "up": True, "ip": "10.0.1.70", "gateway": "10.0.1.254",
              "proto": "dhcp", "dns1": "8.8.8.8"},
         ],
     }

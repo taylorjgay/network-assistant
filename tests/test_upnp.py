@@ -50,10 +50,10 @@ class TestGetUpnpStatus:
 
     def test_private_external_ip(self):
         # ER605 is behind Nokia modem — external IP may be private
-        u = _make_upnp(ext_ip="192.168.1.70")
+        u = _make_upnp(ext_ip="10.0.1.70")
         with patch("src.tools.upnp._discover", return_value=u):
             result = get_upnp_status()
-        assert result["external_ip"] == "192.168.1.70"
+        assert result["external_ip"] == "10.0.1.70"
 
 
 # ---------------------------------------------------------------------------

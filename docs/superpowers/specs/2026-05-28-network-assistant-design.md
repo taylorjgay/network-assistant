@@ -8,12 +8,12 @@ A Python MCP server that gives Claude Code tools to diagnose and (eventually) co
 ## Network Topology
 
 **ISP / WAN:**
-- Nokia modem — NOVOS, 1 Gbps fiber, primary (WAN1)
-- T-Mobile 5G modem — cellular, failover (WAN2)
+- Nokia modem — fiber ISP, 1 Gbps, primary (WAN1)
+- 5G modem — cellular, failover (WAN2)
 
 **First floor — home office rack (startup order):**
 1. Nokia modem
-2. T-Mobile 5G modem
+2. 5G modem
 3. TP-Link ER605 — dual-WAN router, WAN1 primary / WAN2 failover
 4. TP-Link Deco X55 #1 — wired to ER605, primary mesh node, acting as AP
 5. TP-Link dummy switch (rack)

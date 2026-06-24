@@ -1,10 +1,22 @@
-# Network Assistant MCP Server
+# Network Assistant
 
-A Python MCP (Model Context Protocol) server that gives Claude tools to diagnose and configure a home network. Talk to Claude naturally — it calls MCP tools to query and manage your devices over the local network.
+A Python MCP server and React dashboard for managing a home network through Claude or a web UI. Connects directly to a TP-Link ER605 dual-WAN router, Deco X55 mesh nodes, and Pi-hole — via reverse-engineered local device APIs — to expose 36 tools covering device inventory, DNS management, WAN health monitoring, port forwarding, firewall rules, and network diagnostics.
+
+> **Why this project exists:** None of these devices have official APIs. Getting all three talking to Python meant reverse-engineering each authentication scheme from scratch — bare RSA (no padding) for the ER605, a 3-step RSA + AES handshake with a session token bound to a specific TCP connection for the Deco, and Pi-hole v6's session-based auth that changed between minor versions. The interesting parts are documented in [API Notes](#api-notes--hard-won-quirks) below.
+
+## Dashboard
+
+![Overview — live WAN status, mesh nodes, Pi-hole stats](docs/screenshots/Overview.png)
+
+![Network — device inventory with vendor lookup and device labeling](docs/screenshots/Network.png)
+
+![Diagnostics — speed test, ping, traceroute, DNS lookup](docs/screenshots/Diagnostics1.png)
+
+![Diagnostics — DNS lookup results](docs/screenshots/Diagnostics2.png)
 
 ## Features
 
-36 MCP tools across 6 device integrations:
+**36 MCP tools across 6 domains:**
 
 | Area | Tools |
 |---|---|
@@ -14,6 +26,10 @@ A Python MCP (Model Context Protocol) server that gives Claude tools to diagnose
 | **Network inventory** | Device discovery (ARP + Pi-hole + Deco), MAC vendor lookup, device labeling |
 | **UPnP** | Status, active port mappings |
 | **Diagnostics** | Ping, traceroute, DNS resolution, speedtest |
+
+**5-tab React dashboard** (Overview · Network · DNS · Firewall · Diagnostics) with auto-refresh, dark/light mode, and a live blocking toggle for Pi-hole.
+
+**169 tests, all mocked** — no live devices needed to run the test suite.
 
 ## Requirements
 
@@ -47,11 +63,11 @@ cp config.example.json config.json
 .venv/bin/python -m src.server
 ```
 
-The server runs on `http://localhost:8000/mcp` (streamable-HTTP transport).
+The server runs on `http://localhost:8000/mcp` (streamable-HTTP transport) and serves the dashboard at `http://localhost:8000`.
 
 **4. Connect Claude Code:**
 
-`.claude/mcp_settings.json` is already configured for SSE. Start the server before opening a Claude Code session.
+`.claude/mcp_settings.json` is already configured for streamable-HTTP. Start the server before opening a Claude Code session.
 
 The `SessionStart` hook in `.claude/settings.json` will warn you if the server isn't running.
 
@@ -85,7 +101,7 @@ Device labels are stored in `devices.json` (also gitignored). It's created autom
 .venv/bin/pytest -v
 ```
 
-156 tests, all mocked — no live devices needed.
+169 tests, all mocked — no live devices needed.
 
 ---
 
@@ -126,6 +142,7 @@ These took significant reverse engineering to figure out. Documented here for an
 - **SID goes in `X-FTL-SID` header** — not a query param, not a cookie.
 - **Blocking status** is at `/api/dns/blocking`, separate from `/api/stats/summary`.
 - **Domain list type** is returned as strings `"allow"`/`"block"`, not integers.
+- **Session rate limit:** Pi-hole v6 caps concurrent sessions (`max_sessions`). If the dashboard makes parallel API calls on load, you'll hit 429s. Fix: module-level SID cache with TTL + per-host mutex to prevent thundering herd on startup.
 
 ### UPnP (ER605)
 
@@ -136,7 +153,7 @@ The ER605's own UPnP API endpoints return error 1014. Use standard UPnP IGD/SSDP
 ## Architecture
 
 ```
-Claude Code ↔ MCP server (src/server.py, SSE on :8000)
+Claude Code ↔ MCP server (src/server.py, streamable-HTTP on :8000)
                ├── src/tools/er605.py       — ER605 HTTPS API client
                ├── src/tools/deco.py        — Deco AES-auth API client
                ├── src/tools/pihole.py      — Pi-hole v6 REST API client
