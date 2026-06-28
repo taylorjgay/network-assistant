@@ -1,0 +1,8 @@
+services:
+  network-assistant:
+    build: .
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - ./devices.json:/app/devices.json
