@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { formatDistanceToNow } from 'date-fns'
 import { api } from '@/lib/api'
 import { formatUptime } from '@/lib/utils'
-import type { TopClientsResult, PiholeClientsResult, DomainLists } from '@/lib/types'
+import type { TopClientsResult, PiholeClientsResult, DomainLists, LocalDnsRecords } from '@/lib/types'
 import { Switch } from '@/components/ui/switch'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -83,6 +83,60 @@ function AddDomainDialog({ onAdded }: { onAdded: () => void }) {
   )
 }
 
+function AddLocalDnsDialog({ onAdded }: { onAdded: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [hostname, setHostname] = useState('')
+  const [ip, setIp] = useState('')
+
+  const handleAdd = async () => {
+    if (!hostname.trim() || !ip.trim()) return
+    try {
+      await api.addLocalDns(ip.trim(), hostname.trim())
+      toast.success(`Added ${hostname.trim()} → ${ip.trim()}`)
+      onAdded()
+      setOpen(false)
+      setHostname('')
+      setIp('')
+    } catch {
+      toast.error('Failed to add DNS record')
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" className="h-7 text-xs">+ Add Record</Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add Local DNS Record</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 pt-2">
+          <div className="space-y-1">
+            <Label>Hostname</Label>
+            <Input
+              value={hostname}
+              onChange={e => setHostname(e.target.value)}
+              placeholder="homeserver.lan"
+              onKeyDown={e => e.key === 'Enter' && handleAdd()}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>IP Address</Label>
+            <Input
+              value={ip}
+              onChange={e => setIp(e.target.value)}
+              placeholder="192.168.0.160"
+              onKeyDown={e => e.key === 'Enter' && handleAdd()}
+            />
+          </div>
+          <Button onClick={handleAdd} className="w-full">Add</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export default function DnsPage() {
   const queryClient = useQueryClient()
 
@@ -116,6 +170,11 @@ export default function DnsPage() {
   const { data: domainLists, isLoading: domainListsLoading, refetch: refetchDomains } = useQuery<DomainLists>({
     queryKey: ['pihole-domains'],
     queryFn: api.getDomainLists,
+  })
+
+  const { data: localDns, isLoading: localDnsLoading, refetch: refetchLocalDns } = useQuery<LocalDnsRecords>({
+    queryKey: ['pihole-local-dns'],
+    queryFn: api.getLocalDns,
   })
 
   const handleToggleBlocking = async (checked: boolean) => {
@@ -358,6 +417,64 @@ export default function DnsPage() {
           </div>
         ) : (
           <div className="text-sm text-muted-foreground">{domainLists?.error ?? 'Could not load domain lists'}</div>
+        )}
+      </div>
+
+      {/* Local DNS Records */}
+      <div className="rounded-lg border border-border bg-card p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium">Local DNS Records</h3>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => refetchLocalDns()}>↻</Button>
+            <AddLocalDnsDialog onAdded={() => refetchLocalDns()} />
+          </div>
+        </div>
+        {localDnsLoading ? (
+          <div className="text-sm text-muted-foreground">Loading...</div>
+        ) : localDns?.success ? (
+          localDns.records.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No local DNS records</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">Hostname</TableHead>
+                  <TableHead className="text-xs">IP</TableHead>
+                  <TableHead className="text-xs w-8"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[...localDns.records]
+                  .sort((a, b) => a.hostname.localeCompare(b.hostname))
+                  .map((r, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="text-xs font-mono">{r.hostname}</TableCell>
+                      <TableCell className="text-xs font-mono text-muted-foreground">{r.ip}</TableCell>
+                      <TableCell className="text-xs">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-2 text-xs text-red-500 hover:text-red-600"
+                          onClick={async () => {
+                            try {
+                              await api.removeLocalDns(r.ip, r.hostname)
+                              toast.success(`Removed ${r.hostname}`)
+                              refetchLocalDns()
+                            } catch {
+                              toast.error('Failed to remove DNS record')
+                            }
+                          }}
+                        >
+                          ✕
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
+          )
+        ) : (
+          <div className="text-sm text-muted-foreground">{localDns?.error ?? 'Could not load DNS records'}</div>
         )}
       </div>
 

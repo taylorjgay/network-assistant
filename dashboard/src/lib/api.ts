@@ -3,7 +3,7 @@ import type {
   PiholeSystem, MeshHealth, DeviceList, UPnPResult, PortForwards,
   PingResult, TracerouteResult, SpeedtestResult, DnsLookupResult,
   WANSpeedCompare, GravityResult,
-  TopClientsResult, PiholeClientsResult, DomainLists,
+  TopClientsResult, PiholeClientsResult, DomainLists, LocalDnsRecords,
 } from './types'
 
 async function get<T>(path: string): Promise<T> {
@@ -85,4 +85,12 @@ export const api = {
     post<{ success: boolean; error?: string }>('/pihole/domains', { domain, list_type, kind }),
   removeDomain: (list_type: string, kind: string, domain: string) =>
     del<{ success: boolean; error?: string }>(`/pihole/domains/${encodeURIComponent(list_type)}/${encodeURIComponent(kind)}/${encodeURIComponent(domain)}`),
+  getLocalDns: () =>
+    get<LocalDnsRecords>('/pihole/local-dns'),
+  addLocalDns: (ip: string, hostname: string) =>
+    post<{ success: boolean; error?: string }>('/pihole/local-dns', { ip, hostname }),
+  removeLocalDns: (ip: string, hostname: string) =>
+    del<{ success: boolean; error?: string }>(
+      `/pihole/local-dns/${encodeURIComponent(ip)}/${encodeURIComponent(hostname)}`
+    ),
 }

@@ -293,3 +293,14 @@ export interface DomainLists {
   block: PiholeDomainListEntry[]
   error?: string
 }
+
+export interface LocalDnsRecord {
+  ip: string
+  hostname: string
+}
+
+export interface LocalDnsRecords {
+  success: boolean
+  records: LocalDnsRecord[]
+  error?: string
+}
