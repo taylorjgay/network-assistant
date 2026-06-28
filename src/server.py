@@ -635,4 +635,4 @@ async def _serve_static(request: Request) -> Response:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    mcp.run(transport="streamable-http", host="0.0.0.0", port=8000)
