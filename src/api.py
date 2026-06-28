@@ -214,6 +214,22 @@ async def pihole_remove_domain(cfg: Config, domain: str, list_type: str, kind: s
     )
 
 
+async def pihole_local_dns(cfg: Config) -> dict:
+    return await asyncio.to_thread(PiholeClient(**vars(cfg.pihole)).get_local_dns_records)
+
+
+async def pihole_add_local_dns(cfg: Config, ip: str, hostname: str) -> dict:
+    return await asyncio.to_thread(
+        PiholeClient(**vars(cfg.pihole)).add_local_dns_record, ip, hostname
+    )
+
+
+async def pihole_remove_local_dns(cfg: Config, ip: str, hostname: str) -> dict:
+    return await asyncio.to_thread(
+        PiholeClient(**vars(cfg.pihole)).remove_local_dns_record, ip, hostname
+    )
+
+
 async def serve_static(request: Request) -> Response:
     path = request.path_params.get("path", "") or "index.html"
     if not _DIST.exists():

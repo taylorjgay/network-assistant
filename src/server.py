@@ -271,6 +271,30 @@ def get_query_trends() -> dict:
 
 
 @mcp.tool()
+def get_local_dns_records() -> dict:
+    """List all custom local DNS records configured in Pi-hole."""
+    if not _cfg:
+        return _NO_CONFIG
+    return PiholeClient(**vars(_cfg.pihole)).get_local_dns_records()
+
+
+@mcp.tool()
+def add_local_dns_record(ip: str, hostname: str) -> dict:
+    """Add a local DNS record mapping a hostname to an IP address in Pi-hole."""
+    if not _cfg:
+        return _NO_CONFIG
+    return PiholeClient(**vars(_cfg.pihole)).add_local_dns_record(ip, hostname)
+
+
+@mcp.tool()
+def remove_local_dns_record(ip: str, hostname: str) -> dict:
+    """Remove a local DNS record from Pi-hole. Both ip and hostname must match exactly."""
+    if not _cfg:
+        return _NO_CONFIG
+    return PiholeClient(**vars(_cfg.pihole)).remove_local_dns_record(ip, hostname)
+
+
+@mcp.tool()
 def test_dns_resolution(hostname: str, dns_server: str | None = None) -> dict:
     """Resolve a hostname and report which DNS server answered and the resolved IPs.
     Optionally specify dns_server (e.g. '8.8.8.8') to bypass Pi-hole."""
@@ -571,6 +595,30 @@ async def _api_pihole_domain_delete(request: Request) -> JSONResponse:
     kind = request.path_params["kind"]
     domain = request.path_params["domain"]
     return JSONResponse(await api.pihole_remove_domain(_cfg, domain, list_type, kind))
+
+
+@mcp.custom_route("/api/pihole/local-dns", methods=["GET"])
+async def _api_pihole_local_dns(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    return JSONResponse(await api.pihole_local_dns(_cfg))
+
+
+@mcp.custom_route("/api/pihole/local-dns", methods=["POST"])
+async def _api_pihole_local_dns_add(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    body = await request.json()
+    return JSONResponse(await api.pihole_add_local_dns(_cfg, body.get("ip", ""), body.get("hostname", "")))
+
+
+@mcp.custom_route("/api/pihole/local-dns/{ip}/{hostname:path}", methods=["DELETE"])
+async def _api_pihole_local_dns_remove(request: Request) -> JSONResponse:
+    if not _cfg:
+        return JSONResponse(_NO_CONFIG, status_code=503)
+    ip = request.path_params["ip"]
+    hostname = request.path_params["hostname"]
+    return JSONResponse(await api.pihole_remove_local_dns(_cfg, ip, hostname))
 
 
 # Must be last — catch-all for React SPA
