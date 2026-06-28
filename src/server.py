@@ -20,7 +20,7 @@ from src.tools.wan_health import WANHealthClient
 from src.tools.upnp import get_upnp_status as _get_upnp_status, get_upnp_portmaps as _get_upnp_portmaps
 from src.tools.wan_speed import WANSpeedClient
 
-mcp = FastMCP("NetworkAssistant")
+mcp = FastMCP("NetworkAssistant", host="0.0.0.0", port=8000)
 
 _config_path = Path(__file__).parent.parent / "config.json"
 _cfg = load_config(_config_path) if _config_path.exists() else None
@@ -635,4 +635,4 @@ async def _serve_static(request: Request) -> Response:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=8000)
+    mcp.run(transport="streamable-http")
