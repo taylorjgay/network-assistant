@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl -s --max-time 1 http://localhost:8000/mcp -o /dev/null 2>&1; [ $? -eq 7 ] && echo '{\"systemMessage\": \"MCP server not running — start it before using network tools: .venv/bin/python -m src.server\"}'",
+            "command": "curl -s --max-time 1 http://homeserver.lan:8000/mcp -o /dev/null 2>&1; [ $? -eq 7 ] && echo '{\"systemMessage\": \"MCP server unreachable — check that the home server (192.168.0.160) is up and the container is running\"}'",
             "statusMessage": "Checking MCP server..."
           }
         ]

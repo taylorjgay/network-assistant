@@ -2,7 +2,7 @@
   "mcpServers": {
     "network-assistant": {
       "type": "streamable-http",
-      "url": "http://localhost:8000/mcp"
+      "url": "http://homeserver.lan:8000/mcp"
     }
   }
 }
