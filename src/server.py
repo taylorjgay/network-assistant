@@ -608,8 +608,15 @@ async def _api_pihole_local_dns(request: Request) -> JSONResponse:
 async def _api_pihole_local_dns_add(request: Request) -> JSONResponse:
     if not _cfg:
         return JSONResponse(_NO_CONFIG, status_code=503)
-    body = await request.json()
-    return JSONResponse(await api.pihole_add_local_dns(_cfg, body.get("ip", ""), body.get("hostname", "")))
+    try:
+        body = await request.json()
+        ip = body.get("ip", "").strip()
+        hostname = body.get("hostname", "").strip()
+        if not ip or not hostname:
+            return JSONResponse({"success": False, "error": "ip and hostname are required"}, status_code=400)
+    except Exception:
+        return JSONResponse({"success": False, "error": "Invalid JSON body"}, status_code=400)
+    return JSONResponse(await api.pihole_add_local_dns(_cfg, ip, hostname))
 
 
 @mcp.custom_route("/api/pihole/local-dns/{ip}/{hostname:path}", methods=["DELETE"])
