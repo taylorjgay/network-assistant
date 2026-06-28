@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import threading
 import time
 import httpx
+from urllib.parse import quote
 
 # Reuse Pi-hole sessions to avoid hammering /api/auth (Pi-hole v6 rate-limits it).
 # TTL is 4 min; Pi-hole v6 default session lifetime is 5 min.
@@ -479,5 +480,75 @@ class PiholeClient:
             return {"success": False, "error": str(e),
                     "suggestion": f"Cannot reach Pi-hole at {self.host} — verify IP in config.json",
                     "attempted": url}
+        except Exception as e:
+            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+
+    def get_local_dns_records(self) -> dict:
+        url = f"{self._base}/config/dns/hosts"
+        try:
+            with httpx.Client(timeout=10) as c:
+                sid = self._get_sid(c)
+                if sid is None:
+                    return {"success": False, "error": "Authentication failed",
+                            "suggestion": "Check api_token in config.json", "attempted": url}
+                resp = c.get(url, headers={"X-FTL-SID": sid})
+                resp.raise_for_status()
+                hosts = resp.json().get("config", {}).get("dns", {}).get("hosts", [])
+            records = []
+            for entry in hosts:
+                parts = entry.split(" ", 1)
+                if len(parts) == 2:
+                    records.append({"ip": parts[0], "hostname": parts[1]})
+            return {"success": True, "records": records}
+        except httpx.HTTPStatusError as e:
+            return {"success": False, "error": f"HTTP {e.response.status_code}",
+                    "suggestion": "Check Pi-hole host in config.json", "attempted": url}
+        except httpx.ConnectError as e:
+            return {"success": False, "error": str(e),
+                    "suggestion": f"Cannot reach Pi-hole at {self.host}", "attempted": url}
+        except Exception as e:
+            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+
+    def add_local_dns_record(self, ip: str, hostname: str) -> dict:
+        entry = quote(f"{ip} {hostname}", safe="")
+        url = f"{self._base}/config/dns/hosts/{entry}"
+        try:
+            with httpx.Client(timeout=10) as c:
+                sid = self._get_sid(c)
+                if sid is None:
+                    return {"success": False, "error": "Authentication failed",
+                            "suggestion": "Check api_token in config.json", "attempted": url}
+                resp = c.put(url, headers={"X-FTL-SID": sid})
+                resp.raise_for_status()
+            return {"success": True, "ip": ip, "hostname": hostname}
+        except httpx.HTTPStatusError as e:
+            return {"success": False, "error": f"HTTP {e.response.status_code}",
+                    "suggestion": "Record already exists" if e.response.status_code == 409 else "Check Pi-hole host in config.json",
+                    "attempted": url}
+        except httpx.ConnectError as e:
+            return {"success": False, "error": str(e),
+                    "suggestion": f"Cannot reach Pi-hole at {self.host}", "attempted": url}
+        except Exception as e:
+            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+
+    def remove_local_dns_record(self, ip: str, hostname: str) -> dict:
+        entry = quote(f"{ip} {hostname}", safe="")
+        url = f"{self._base}/config/dns/hosts/{entry}"
+        try:
+            with httpx.Client(timeout=10) as c:
+                sid = self._get_sid(c)
+                if sid is None:
+                    return {"success": False, "error": "Authentication failed",
+                            "suggestion": "Check api_token in config.json", "attempted": url}
+                resp = c.delete(url, headers={"X-FTL-SID": sid})
+                resp.raise_for_status()
+            return {"success": True, "ip": ip, "hostname": hostname}
+        except httpx.HTTPStatusError as e:
+            return {"success": False, "error": f"HTTP {e.response.status_code}",
+                    "suggestion": "Record not found — check ip and hostname match exactly" if e.response.status_code == 404 else "Check Pi-hole host in config.json",
+                    "attempted": url}
+        except httpx.ConnectError as e:
+            return {"success": False, "error": str(e),
+                    "suggestion": f"Cannot reach Pi-hole at {self.host}", "attempted": url}
         except Exception as e:
             return {"success": False, "error": str(e), "suggestion": "", "attempted": url}

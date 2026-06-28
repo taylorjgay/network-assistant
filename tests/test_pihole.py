@@ -538,3 +538,87 @@ def test_get_query_trends_auth_failure(client):
 
     assert result["success"] is False
     assert "Authentication failed" in result["error"]
+
+
+# --- Local DNS Records ---
+
+@respx.mock
+def test_get_local_dns_records_success(client):
+    _mock_auth()
+    respx.get("http://192.168.0.10/api/config/dns/hosts").mock(
+        return_value=httpx.Response(200, json={
+            "config": {"dns": {"hosts": ["192.168.0.160 homeserver.lan", "10.0.0.1 printer.lan"]}}
+        })
+    )
+    result = client.get_local_dns_records()
+    assert result["success"] is True
+    assert len(result["records"]) == 2
+    assert result["records"][0] == {"ip": "192.168.0.160", "hostname": "homeserver.lan"}
+    assert result["records"][1] == {"ip": "10.0.0.1", "hostname": "printer.lan"}
+
+
+@respx.mock
+def test_get_local_dns_records_empty(client):
+    _mock_auth()
+    respx.get("http://192.168.0.10/api/config/dns/hosts").mock(
+        return_value=httpx.Response(200, json={"config": {"dns": {"hosts": []}}})
+    )
+    result = client.get_local_dns_records()
+    assert result["success"] is True
+    assert result["records"] == []
+
+
+@respx.mock
+def test_get_local_dns_records_auth_failure(client):
+    respx.post("http://192.168.0.10/api/auth").mock(
+        return_value=httpx.Response(200, json={"session": {"valid": False}})
+    )
+    result = client.get_local_dns_records()
+    assert result["success"] is False
+    assert "Authentication" in result["error"]
+
+
+@respx.mock
+def test_add_local_dns_record_success(client):
+    _mock_auth()
+    respx.put("http://192.168.0.10/api/config/dns/hosts/192.168.0.160%20homeserver.lan").mock(
+        return_value=httpx.Response(201, json={"took": 0.001})
+    )
+    result = client.add_local_dns_record("192.168.0.160", "homeserver.lan")
+    assert result["success"] is True
+    assert result["ip"] == "192.168.0.160"
+    assert result["hostname"] == "homeserver.lan"
+
+
+@respx.mock
+def test_add_local_dns_record_conflict(client):
+    _mock_auth()
+    respx.put("http://192.168.0.10/api/config/dns/hosts/192.168.0.160%20homeserver.lan").mock(
+        return_value=httpx.Response(409, json={"error": "already exists"})
+    )
+    result = client.add_local_dns_record("192.168.0.160", "homeserver.lan")
+    assert result["success"] is False
+    assert "already exists" in result["suggestion"]
+
+
+@respx.mock
+def test_remove_local_dns_record_success(client):
+    _mock_auth()
+    respx.delete("http://192.168.0.10/api/config/dns/hosts/192.168.0.160%20homeserver.lan").mock(
+        return_value=httpx.Response(204)
+    )
+    result = client.remove_local_dns_record("192.168.0.160", "homeserver.lan")
+    assert result["success"] is True
+    assert result["ip"] == "192.168.0.160"
+    assert result["hostname"] == "homeserver.lan"
+
+
+@respx.mock
+def test_remove_local_dns_record_not_found(client):
+    _mock_auth()
+    respx.delete("http://192.168.0.10/api/config/dns/hosts/192.168.0.160%20homeserver.lan").mock(
+        return_value=httpx.Response(404)
+    )
+    result = client.remove_local_dns_record("192.168.0.160", "homeserver.lan")
+    assert result["success"] is False
+    assert "not found" in result["suggestion"].lower()
