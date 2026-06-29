@@ -8,7 +8,11 @@ def _discover():
     import miniupnpc
     u = miniupnpc.UPnP()
     u.discoverdelay = DISCOVER_DELAY_MS
-    n = u.discover()
+    try:
+        n = u.discover()
+    except Exception:
+        # miniupnpc raises Exception("Success") when no device responds to SSDP
+        return None
     if n == 0:
         return None
     u.selectigd()
