@@ -23,6 +23,7 @@ export default function OverviewPage() {
   const { data: snap, isLoading } = useQuery({
     queryKey: ['snapshot'],
     queryFn: api.getSnapshot,
+    staleTime: 25_000,
     refetchInterval: 30_000,
   })
 

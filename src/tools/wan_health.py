@@ -14,7 +14,7 @@ _DEGRADED_LATENCY_MS = 150.0
 def _ping_target(target: str) -> dict:
     try:
         result = subprocess.run(
-            ["ping", "-c", "5", "-i", "0.2", target],
+            ["ping", "-c", "3", "-i", "0.2", target],
             capture_output=True, text=True, timeout=10,
         )
         output = result.stdout

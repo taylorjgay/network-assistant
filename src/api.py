@@ -1,4 +1,5 @@
 import asyncio
+import time
 from pathlib import Path
 
 from starlette.requests import Request
@@ -22,8 +23,13 @@ from src.tools.wan_speed import WANSpeedClient
 _LABELS_PATH = Path(__file__).parent.parent / "devices.json"
 _DIST = Path(__file__).parent.parent / "dashboard" / "dist"
 
+_snapshot_cache: dict | None = None
+_snapshot_ts: float = 0.0
+_snapshot_lock = asyncio.Lock()
+_SNAPSHOT_TTL = 25.0
 
-async def snapshot(cfg: Config) -> dict:
+
+async def _do_snapshot(cfg: Config) -> dict:
     # ER605 rejects concurrent logins from the same IP — run wan+router sequentially.
     # Pi-hole and Deco hit different devices so they run in parallel with ER605.
     async def _er605_sequential():
@@ -62,6 +68,36 @@ async def snapshot(cfg: Config) -> dict:
         "mesh": mesh if not isinstance(mesh, BaseException) else {"success": False, "error": str(mesh)},
         "router": router if not isinstance(router, BaseException) else {"success": False, "error": str(router)},
     }
+
+
+async def snapshot(cfg: Config) -> dict:
+    global _snapshot_cache, _snapshot_ts
+    now = time.monotonic()
+    if _snapshot_cache is not None and (now - _snapshot_ts) < _SNAPSHOT_TTL:
+        if (now - _snapshot_ts) > 20.0:
+            asyncio.create_task(_background_refresh(cfg))
+        return _snapshot_cache
+    async with _snapshot_lock:
+        now = time.monotonic()
+        if _snapshot_cache is not None and (now - _snapshot_ts) < _SNAPSHOT_TTL:
+            return _snapshot_cache
+        result = await _do_snapshot(cfg)
+        _snapshot_cache = result
+        _snapshot_ts = time.monotonic()
+        return result
+
+
+async def _background_refresh(cfg: Config) -> None:
+    global _snapshot_cache, _snapshot_ts
+    if _snapshot_lock.locked():
+        return
+    async with _snapshot_lock:
+        try:
+            result = await _do_snapshot(cfg)
+            _snapshot_cache = result
+            _snapshot_ts = time.monotonic()
+        except Exception:
+            pass
 
 
 async def get_hosts(cfg: Config) -> dict:
