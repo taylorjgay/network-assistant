@@ -100,6 +100,21 @@ async def _background_refresh(cfg: Config) -> None:
             pass
 
 
+async def warm_snapshot_loop(cfg: Config) -> None:
+    """Runs continuously, refreshing the snapshot cache every 25s.
+    Started on first snapshot request so the cache stays warm between visits."""
+    global _snapshot_cache, _snapshot_ts
+    while True:
+        await asyncio.sleep(25)
+        async with _snapshot_lock:
+            try:
+                result = await _do_snapshot(cfg)
+                _snapshot_cache = result
+                _snapshot_ts = time.monotonic()
+            except Exception:
+                pass
+
+
 async def get_hosts(cfg: Config) -> dict:
     return {
         "router": f"https://{cfg.er605.host}/webpages/login.html",

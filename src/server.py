@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -34,6 +35,8 @@ _devices = DeviceInventory(labels_path=_devices_labels_path, cfg=_cfg)
 _NO_CONFIG = {"success": False, "error": "config.json not found",
               "suggestion": "Copy config.example.json to config.json and fill in your device details",
               "attempted": "n/a — no config.json"}
+
+_warmer_task: asyncio.Task | None = None
 
 
 @mcp.tool()
@@ -349,6 +352,9 @@ async def _api_hosts(request: Request) -> JSONResponse:
 
 @mcp.custom_route("/api/snapshot", methods=["GET"])
 async def _api_snapshot(request: Request) -> JSONResponse:
+    global _warmer_task
+    if _cfg and (_warmer_task is None or _warmer_task.done()):
+        _warmer_task = asyncio.create_task(api.warm_snapshot_loop(_cfg))
     if not _cfg:
         return JSONResponse(_NO_CONFIG, status_code=503)
     return JSONResponse(await api.snapshot(_cfg))
