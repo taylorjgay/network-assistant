@@ -1,4 +1,5 @@
 import asyncio
+import time
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -37,6 +38,32 @@ _NO_CONFIG = {"success": False, "error": "config.json not found",
               "attempted": "n/a — no config.json"}
 
 _warmer_task: asyncio.Task | None = None
+
+_cooldown_last: dict[str, float] = {}
+_cooldown_lock = asyncio.Lock()
+
+# Minimum seconds between calls for expensive operations.
+_COOLDOWNS = {
+    "devices_scan": 30.0,
+    "speedtest": 120.0,
+    "gravity": 60.0,
+    "wan_speed_compare": 120.0,
+}
+
+
+async def _rate_limit(key: str) -> JSONResponse | None:
+    """Return a 429 JSONResponse if the operation is on cooldown, else None and record the call."""
+    seconds = _COOLDOWNS[key]
+    async with _cooldown_lock:
+        now = time.monotonic()
+        remaining = seconds - (now - _cooldown_last.get(key, 0.0))
+        if remaining > 0:
+            return JSONResponse(
+                {"success": False, "error": f"Too many requests — try again in {int(remaining) + 1}s"},
+                status_code=429,
+            )
+        _cooldown_last[key] = now
+    return None
 
 
 @mcp.tool()
@@ -442,6 +469,8 @@ async def _api_devices(request: Request) -> JSONResponse:
 async def _api_devices_scan(request: Request) -> JSONResponse:
     if not _cfg:
         return JSONResponse(_NO_CONFIG, status_code=503)
+    if (resp := await _rate_limit("devices_scan")):
+        return resp
     return JSONResponse(await api.get_devices(_cfg, deep_scan=True))
 
 
@@ -525,6 +554,8 @@ async def _api_traceroute(request: Request) -> JSONResponse:
 async def _api_speedtest(request: Request) -> JSONResponse:
     if not _cfg:
         return JSONResponse(_NO_CONFIG, status_code=503)
+    if (resp := await _rate_limit("speedtest")):
+        return resp
     return JSONResponse(await api.diag_speedtest())
 
 
@@ -546,6 +577,8 @@ async def _api_dns(request: Request) -> JSONResponse:
 async def _api_wan_speed_compare(request: Request) -> JSONResponse:
     if not _cfg:
         return JSONResponse(_NO_CONFIG, status_code=503)
+    if (resp := await _rate_limit("wan_speed_compare")):
+        return resp
     try:
         body = await request.json()
         quick = bool(body.get("quick", True))
@@ -558,6 +591,8 @@ async def _api_wan_speed_compare(request: Request) -> JSONResponse:
 async def _api_pihole_gravity(request: Request) -> JSONResponse:
     if not _cfg:
         return JSONResponse(_NO_CONFIG, status_code=503)
+    if (resp := await _rate_limit("gravity")):
+        return resp
     return JSONResponse(await api.pihole_gravity(_cfg))
 
 

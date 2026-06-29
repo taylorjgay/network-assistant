@@ -3,9 +3,26 @@ import socket
 import subprocess
 import time
 
+# Accepts hostnames and IPv4 addresses; rejects anything starting with '-' or
+# containing shell metacharacters that could be passed as flags to ping/traceroute/dig.
+_HOST_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9.\-]{0,252}$')
+
+
+def _validate_host(value: str, label: str = "host") -> str | None:
+    """Return an error message if invalid, None if valid."""
+    if not value:
+        return f"{label} is required"
+    if not _HOST_RE.match(value):
+        return f"Invalid {label} '{value}' — must be a valid hostname or IP address"
+    return None
+
 
 def ping_host(host: str, count: int = 4) -> dict:
     """Ping a host, return latency and packet loss."""
+    err = _validate_host(host)
+    if err:
+        return {"success": False, "host": host, "error": err,
+                "suggestion": "Use a valid hostname or IP (e.g. 8.8.8.8, google.com)"}
     try:
         result = subprocess.run(
             ["ping", "-c", str(count), host],
@@ -35,6 +52,10 @@ def ping_host(host: str, count: int = 4) -> dict:
 
 def traceroute_host(host: str) -> dict:
     """Traceroute to a host, returning each hop."""
+    err = _validate_host(host)
+    if err:
+        return {"success": False, "host": host, "error": err,
+                "suggestion": "Use a valid hostname or IP (e.g. 8.8.8.8, google.com)"}
     try:
         result = subprocess.run(
             ["traceroute", "-n", host],
@@ -59,6 +80,15 @@ def traceroute_host(host: str) -> dict:
 
 def test_dns_resolution(hostname: str, dns_server: str = None) -> dict:
     """Resolve a hostname and return the addresses."""
+    err = _validate_host(hostname, "hostname")
+    if err:
+        return {"success": False, "hostname": hostname, "error": err,
+                "suggestion": "Use a valid hostname (e.g. google.com, homeserver.lan)"}
+    if dns_server:
+        err = _validate_host(dns_server, "dns_server")
+        if err:
+            return {"success": False, "hostname": hostname, "dns_server": dns_server,
+                    "error": err, "suggestion": "Use a valid DNS server IP (e.g. 8.8.8.8, 192.168.0.200)"}
     start = time.monotonic()
     try:
         if dns_server:

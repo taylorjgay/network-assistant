@@ -97,3 +97,67 @@ def test_run_speedtest_failure():
         result = run_speedtest()
     assert result["success"] is False
     assert "suggestion" in result
+
+
+# Input validation tests
+
+def test_ping_rejects_flag_injection():
+    result = ping_host("-n 100 8.8.8.8")
+    assert result["success"] is False
+    assert "Invalid" in result["error"]
+
+
+def test_ping_rejects_shell_metachar():
+    result = ping_host("8.8.8.8; cat /etc/passwd")
+    assert result["success"] is False
+    assert "Invalid" in result["error"]
+
+
+def test_ping_rejects_empty():
+    result = ping_host("")
+    assert result["success"] is False
+
+
+def test_traceroute_rejects_flag_injection():
+    result = traceroute_host("--help")
+    assert result["success"] is False
+    assert "Invalid" in result["error"]
+
+
+def test_traceroute_rejects_shell_metachar():
+    result = traceroute_host("8.8.8.8 && id")
+    assert result["success"] is False
+
+
+def test_dns_rejects_invalid_hostname():
+    result = _dns_resolve("-version")
+    assert result["success"] is False
+    assert "Invalid" in result["error"]
+
+
+def test_dns_rejects_invalid_dns_server():
+    result = _dns_resolve("google.com", dns_server="-x 8.8.8.8")
+    assert result["success"] is False
+    assert "Invalid" in result["error"]
+
+
+def test_ping_accepts_valid_ip():
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="4 packets transmitted, 4 received, 0% packet loss\nmin/avg/max/stddev = 1.0/2.0/3.0/0.5 ms\n",
+            stderr=""
+        )
+        result = ping_host("8.8.8.8")
+    assert result["success"] is True
+
+
+def test_ping_accepts_valid_hostname():
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="4 packets transmitted, 4 received, 0% packet loss\nmin/avg/max/stddev = 1.0/2.0/3.0/0.5 ms\n",
+            stderr=""
+        )
+        result = ping_host("homeserver.lan")
+    assert result["success"] is True
