@@ -1,4 +1,7 @@
-mcp[cli]>=1.0.0
+# Pinned below 2.0: mcp 2.x moved FastMCP off mcp.server.fastmcp, which
+# src/server.py imports. The floor was unpinned, so the first rebuild after
+# mcp 2.0.0 shipped resolved to it and crash-looped the container.
+mcp[cli]>=1.0.0,<2.0.0
 httpx>=0.27.0
 pycryptodome>=3.20.0
 mac-vendor-lookup>=0.1.11
