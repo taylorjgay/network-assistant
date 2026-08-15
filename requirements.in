@@ -1,0 +1,18 @@
+# Intent / direct dependencies. This file is the one humans edit.
+#
+# requirements.txt next to it is the LOCKED, fully-pinned resolution that Docker
+# actually installs. Regenerate it after changing anything here (see the header
+# of requirements.txt for how).
+#
+# mcp is capped below 2.0: mcp 2.x moved FastMCP off mcp.server.fastmcp, which
+# src/server.py imports. Removing the cap crash-loops the container.
+mcp[cli]>=1.0.0,<2.0.0
+httpx>=0.27.0
+pycryptodome>=3.20.0
+mac-vendor-lookup>=0.1.11
+speedtest-cli>=2.1.3
+pytest>=8.0.0
+pytest-asyncio>=1.0.0
+respx>=0.21.0
+miniupnpc>=2.3
+certifi>=2024.0.0
