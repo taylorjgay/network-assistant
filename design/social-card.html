@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0A0F18;
+    --amber: #F59E0B;
+    --chip-bg: #131C27;
+    --chip-border: #2A3F55;
+    --chip-text: #CBD5E1;
+    --meta: #64748B;
+    --body: #CBD5E1;
+    --rule: #1B2837;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 640px; }
+  body {
+    background: var(--bg);
+    background-image: radial-gradient(115% 90% at 8% 0%, #121B29 0%, #0A0F18 62%);
+    font-family: 'Inter', system-ui, sans-serif;
+    color: var(--body);
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Identity bar. Tagline order is "Software Engineer · Data Engineer",
+     reversed on 2026-08-12 and matching the site and the OG card. The first
+     cut of this image kept the old order. */
+  .bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 56px;
+    height: 74px;
+    border-bottom: 1px solid var(--rule);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 17px;
+  }
+  .bar .name { color: #FFFFFF; font-weight: 700; }
+  .bar .slash { color: #3E5470; margin: 0 14px; }
+  .bar .role { color: #8FA3BA; }
+  .bar .stack { color: #5A6E86; }
+
+  .content { flex: 1; display: flex; flex-direction: column; padding: 44px 56px 40px; }
+
+  /* Title through body center as a group above the footer, matching the
+     personal-site OG card. Left in natural flow they stack at the top and
+     leave ~180px of dead air above the URL rule. */
+  .stack-group { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+
+  h1 {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 88px;
+    letter-spacing: -0.03em;
+    color: #FFFFFF;
+    line-height: 1.05;
+  }
+
+  .subtitle {
+    color: var(--amber);
+    font-size: 25px;
+    font-weight: 500;
+    margin-top: 14px;
+  }
+
+  .chips { display: flex; gap: 14px; margin-top: 30px; }
+  .chip {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--chip-text);
+    background: var(--chip-bg);
+    border: 1px solid var(--chip-border);
+    border-radius: 7px;
+    padding: 11px 17px;
+  }
+  /* The two claims worth pulling forward. 39 is counted from 39 `.tool()`
+     registrations in src/server.py. The test count is deliberately absent:
+     the README, the website, and grep disagree (169 / 177 / 186), so the card
+     asserts the property instead of a number it cannot source. */
+  .chip.lead {
+    color: var(--amber);
+    border-color: rgba(245, 158, 11, 0.55);
+    background: rgba(245, 158, 11, 0.07);
+  }
+
+  .body {
+    font-size: 22px;
+    line-height: 1.6;
+    color: var(--body);
+    margin-top: 38px;
+    max-width: 1090px;
+  }
+
+  .footer { margin-top: auto; display: flex; align-items: center; gap: 22px; }
+  .footer .url {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px;
+    color: #7A8AA0;
+  }
+  .footer .rule {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, var(--rule), rgba(27, 40, 55, 0));
+  }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <div>
+      <span class="name">Taylor Gay</span>
+      <span class="slash">/</span>
+      <span class="role">Software Engineer · Data Engineer</span>
+    </div>
+    <span class="stack">Python 3.11 · FastMCP</span>
+  </div>
+
+  <div class="content">
+    <div class="stack-group">
+    <h1>Network Assistant</h1>
+    <p class="subtitle">A Python MCP server for home network operations</p>
+
+    <div class="chips">
+      <span class="chip lead">39 Tools</span>
+      <span class="chip lead">Fully Mocked Tests</span>
+      <span class="chip">Async Python</span>
+      <span class="chip">REST + RSA/AES</span>
+      <span class="chip">React + TypeScript</span>
+    </div>
+
+    <p class="body">
+      Manage a home network through Claude or a web UI. Connects to a TP-Link ER605 dual-WAN
+      router, Deco mesh nodes, and Pi-hole over reverse-engineered local device APIs, covering
+      device inventory, DNS, WAN health, port forwarding, and firewall rules.
+    </p>
+    </div>
+
+    <div class="footer">
+      <span class="url">github.com/taylorjgay/network-assistant</span>
+      <span class="rule"></span>
+    </div>
+  </div>
+</body>
+</html>
