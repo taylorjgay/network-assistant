@@ -250,3 +250,54 @@ def test_warmer_stops_when_dashboard_idle(monkeypatch):
         asyncio.run(api_module.warm_snapshot_loop(_mock_cfg()))
     assert mock_snapshot.call_count == 1
     assert len(sleeps) == 2
+
+
+# --- Snapshot cache: serve whatever exists at once, flag it stale, refresh behind it ---
+
+@pytest.fixture
+def snapshot_state(monkeypatch):
+    monkeypatch.setattr(api_module, "_snapshot_cache", None)
+    monkeypatch.setattr(api_module, "_snapshot_ts", 0.0)
+    monkeypatch.setattr(api_module, "_refresh_task", None)
+
+
+def test_snapshot_serves_weeks_old_cache_immediately_and_refreshes(snapshot_state, monkeypatch):
+    three_weeks = 21 * 86400
+    monkeypatch.setattr(api_module, "_snapshot_cache", {"wan": {"old": True}})
+    monkeypatch.setattr(api_module, "_snapshot_ts", time.monotonic() - three_weeks)
+
+    async def run():
+        with patch("src.api._do_snapshot", return_value={"wan": {"old": False}}) as mock_snapshot:
+            served = await api_module.snapshot(_mock_cfg())
+            await api_module._refresh_task
+            return served, mock_snapshot.call_count
+
+    served, calls = asyncio.run(run())
+    assert served["wan"] == {"old": True}
+    assert served["stale"] is True and served["age_seconds"] >= three_weeks
+    assert calls == 1
+    assert api_module._snapshot_cache == {"wan": {"old": False}}
+
+
+def test_snapshot_fresh_cache_is_not_stale_and_not_refreshed(snapshot_state, monkeypatch):
+    monkeypatch.setattr(api_module, "_snapshot_cache", {"wan": {}})
+    monkeypatch.setattr(api_module, "_snapshot_ts", time.monotonic() - 5)
+
+    async def run():
+        with patch("src.api._do_snapshot") as mock_snapshot:
+            served = await api_module.snapshot(_mock_cfg())
+            return served, mock_snapshot.call_count
+
+    served, calls = asyncio.run(run())
+    assert served["stale"] is False and calls == 0
+    assert api_module._refresh_task is None
+
+
+def test_snapshot_without_cache_waits_for_a_real_one(snapshot_state):
+    async def run():
+        with patch("src.api._do_snapshot", return_value={"wan": {"live": True}}):
+            return await api_module.snapshot(_mock_cfg())
+
+    served = asyncio.run(run())
+    assert served["wan"] == {"live": True}
+    assert served["stale"] is False and served["age_seconds"] == 0

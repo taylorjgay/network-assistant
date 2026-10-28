@@ -74,6 +74,10 @@ export interface Snapshot {
   pihole: PiholeStats
   mesh: MeshHealth
   router: RouterInfo
+  age_seconds?: number
+  // The server sends whatever it has cached, however old; stale data is a placeholder
+  // until a refresh lands, so no status in it should be shown as current.
+  stale?: boolean
 }
 
 export interface TrendHour {

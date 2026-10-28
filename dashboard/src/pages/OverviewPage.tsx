@@ -4,7 +4,7 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { api } from '@/lib/api'
-import { formatUptime } from '@/lib/utils'
+import { cn, formatAge, formatUptime } from '@/lib/utils'
 import { StatusBadge } from '@/components/StatusBadge'
 import { Switch } from '@/components/ui/switch'
 
@@ -24,7 +24,8 @@ export default function OverviewPage() {
     queryKey: ['snapshot'],
     queryFn: api.getSnapshot,
     staleTime: 25_000,
-    refetchInterval: 30_000,
+    // A stale snapshot is a placeholder while the server refreshes (~10s); ask again soon.
+    refetchInterval: (query) => (query.state.data?.stale ? 3_000 : 30_000),
   })
 
   const { data: trends } = useQuery({
@@ -55,6 +56,9 @@ export default function OverviewPage() {
   const pihole = snap?.pihole
   const mesh = snap?.mesh
   const router = snap?.router
+  // Old data still lays the page out, but nothing in it is shown as a current status.
+  const stale = snap?.stale ?? false
+  const okText = stale ? 'text-muted-foreground' : 'text-green-500'
 
   const wans = [
     { label: 'WAN1', up: wan1Up, data: snap?.wan?.wan1 },
@@ -68,8 +72,14 @@ export default function OverviewPage() {
 
   return (
     <div className="space-y-6">
+      {stale && (
+        <div className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+          Last updated {formatAge(snap?.age_seconds ?? 0)} ago · refreshing…
+        </div>
+      )}
+
       {/* Three summary cards */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-stretch">
+      <div className={cn('grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-stretch transition-opacity', stale && 'opacity-60')}>
 
         {/* Router + WAN */}
         <div className="rounded-lg border border-border bg-card p-4 flex flex-col gap-4">
@@ -93,15 +103,15 @@ export default function OverviewPage() {
               const isActive = activeWan === label
               return (
                 <div key={label} className="flex items-center gap-3 text-sm">
-                  <StatusBadge online={up} />
+                  <StatusBadge online={up} unknown={stale} />
                   <span className="font-medium w-12 shrink-0">{label}</span>
                   <span className="text-xs text-muted-foreground flex-1 truncate">
-                    {up ? (data?.ip ?? '—') : 'Down'}
-                    {up && probe ? ` · ${probe.avg_latency_ms?.toFixed(0)}ms` : ''}
+                    {up || stale ? (data?.ip ?? '—') : 'Down'}
+                    {up && probe && !stale ? ` · ${probe.avg_latency_ms?.toFixed(0)}ms` : ''}
                   </span>
                   <div className="shrink-0">
                     {isActive
-                      ? <span className="text-xs font-medium text-green-500">Active</span>
+                      ? <span className={cn('text-xs font-medium', okText)}>Active</span>
                       : up
                         ? <span className="text-xs text-muted-foreground">Standby</span>
                         : null}
@@ -138,11 +148,11 @@ export default function OverviewPage() {
             <div className="space-y-2">
               {sortedNodes.map((node, i) => (
                 <div key={i} className="flex items-center gap-2 text-sm">
-                  <StatusBadge online={node.mesh_status === 'connected'} />
+                  <StatusBadge online={node.mesh_status === 'connected'} unknown={stale} />
                   <span className="font-medium">{nodeName(node.nickname, i)}</span>
                   <span className="ml-auto">
                     {node.is_primary
-                      ? <span className="text-xs font-medium text-green-500">Primary</span>
+                      ? <span className={cn('text-xs font-medium', okText)}>Primary</span>
                       : node.backhaul?.includes('wired')
                         ? <span className="text-xs text-muted-foreground">Wired</span>
                         : node.signal_level_dbm != null
@@ -197,8 +207,8 @@ export default function OverviewPage() {
               <div className="flex items-center gap-3 text-sm">
                 <span className="text-muted-foreground flex-1 text-xs">DNS blocking</span>
                 <div className="flex items-center gap-1.5">
-                  <Switch checked={pihole.enabled} onCheckedChange={handleToggleBlocking} />
-                  {pihole.enabled && <span className="text-xs font-medium text-green-500">Active</span>}
+                  <Switch checked={pihole.enabled} onCheckedChange={handleToggleBlocking} disabled={stale} />
+                  {pihole.enabled && <span className={cn('text-xs font-medium', okText)}>Active</span>}
                 </div>
               </div>
             </div>

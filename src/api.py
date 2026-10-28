@@ -26,7 +26,13 @@ _DIST = Path(__file__).parent.parent / "dashboard" / "dist"
 _snapshot_cache: dict | None = None
 _snapshot_ts: float = 0.0
 _snapshot_lock = asyncio.Lock()
-_SNAPSHOT_TTL = 25.0
+# A request finding the cache older than this starts a background refresh.
+_REFRESH_AFTER = 20.0
+# Older than this, a served snapshot is flagged `stale` and the page shows it as a dimmed
+# placeholder. Above the normal refresh cycle (warmer every 25s plus a ~10s snapshot), so
+# routine polling never trips it.
+_STALE_AFTER = 90.0
+_refresh_task: asyncio.Task | None = None
 
 # The warmer stops once the dashboard has made no snapshot request for this long.
 # React Query skips refetches in hidden tabs, so a quiet period means nobody is looking.
@@ -119,22 +125,31 @@ async def _do_snapshot(cfg: Config) -> dict:
     }
 
 
+def _with_age(snap: dict, ts: float, now: float) -> dict:
+    age = now - ts
+    return {**snap, "age_seconds": round(age), "stale": age > _STALE_AFTER}
+
+
 async def snapshot(cfg: Config) -> dict:
-    global _snapshot_cache, _snapshot_ts, _last_snapshot_request
+    """Serve the cached snapshot at once, whatever its age, and refresh it in the background.
+
+    Polling stops when the dashboard closes, so the cache can be days old when the page is
+    next opened. Serving it anyway lets the page lay out instantly; `stale` tells the page
+    to treat it as a placeholder and re-ask until fresh data lands (one Deco login, ~10s).
+    Only the very first request after a restart waits for a full snapshot.
+    """
+    global _snapshot_cache, _snapshot_ts, _last_snapshot_request, _refresh_task
     now = time.monotonic()
     _last_snapshot_request = now
-    if _snapshot_cache is not None and (now - _snapshot_ts) < _SNAPSHOT_TTL:
-        if (now - _snapshot_ts) > 20.0:
-            asyncio.create_task(_background_refresh(cfg))
-        return _snapshot_cache
+    if _snapshot_cache is not None:
+        if now - _snapshot_ts > _REFRESH_AFTER and (_refresh_task is None or _refresh_task.done()):
+            _refresh_task = asyncio.create_task(_background_refresh(cfg))
+        return _with_age(_snapshot_cache, _snapshot_ts, now)
     async with _snapshot_lock:
-        now = time.monotonic()
-        if _snapshot_cache is not None and (now - _snapshot_ts) < _SNAPSHOT_TTL:
-            return _snapshot_cache
-        result = await _do_snapshot(cfg)
-        _snapshot_cache = result
-        _snapshot_ts = time.monotonic()
-        return result
+        if _snapshot_cache is None:
+            _snapshot_cache = await _do_snapshot(cfg)
+            _snapshot_ts = time.monotonic()
+        return _with_age(_snapshot_cache, _snapshot_ts, time.monotonic())
 
 
 async def _background_refresh(cfg: Config) -> None:
