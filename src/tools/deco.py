@@ -166,7 +166,7 @@ class DecoClient:
     def get_connected_clients(self) -> dict:
         """Get all clients connected to the mesh with their Deco node assignment."""
         try:
-            with httpx.Client(verify=False, timeout=15) as client:
+            with httpx.Client(verify=False, timeout=30) as client:
                 data = self._request("client", "client_list", client)
                 clients_raw = data.get("result", {}).get("client_list", [])
                 clients = [
@@ -192,7 +192,7 @@ class DecoClient:
     def get_deco_performance(self) -> dict:
         """Get CPU and memory usage from the primary Deco node."""
         try:
-            with httpx.Client(verify=False, timeout=15) as client:
+            with httpx.Client(verify=False, timeout=30) as client:
                 data = self._request("network", "performance", client)
                 result = data.get("result", {})
                 return {
@@ -206,7 +206,7 @@ class DecoClient:
     def get_mesh_health(self) -> dict:
         """Get status of all Deco nodes including backhaul type, signal strength, and performance."""
         try:
-            with httpx.Client(verify=False, timeout=15) as client:
+            with httpx.Client(verify=False, timeout=30) as client:
                 data = self._request("device", "device_list", client)
                 nodes_raw = data.get("result", {}).get("device_list", [])
                 nodes = [
