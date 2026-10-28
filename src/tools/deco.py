@@ -19,10 +19,38 @@ from Crypto.Util.Padding import pad, unpad
 # takes this lock.
 _session_lock = threading.Lock()
 
-# A Deco login costs ~3-9s, so get_mesh_health results are shared for this long: callers
-# that queued on the lock get the result the first caller just fetched.
+# A Deco login costs ~3-9s, so mesh health and client list results are shared for this
+# long: callers that queued on the lock get the result the first caller just fetched.
 _MESH_TTL = 20.0
-_mesh_cache: tuple[float, dict] | None = None
+_cache: dict[str, tuple[float, dict]] = {}
+
+_BANDS = {"band2_4": "2.4GHz", "band5": "5GHz"}
+
+
+def _cached(key: str, fetch) -> dict:
+    """Run `fetch` under the session lock unless a successful result under `key` is fresh."""
+    with _session_lock:
+        hit = _cache.get(key)
+        if hit is not None and time.monotonic() - hit[0] < _MESH_TTL:
+            return copy.deepcopy(hit[1])
+        result = fetch()
+        if result["success"]:
+            _cache[key] = (time.monotonic(), result)
+        return copy.deepcopy(result)
+
+
+def _decode_name(name: str | None) -> str | None:
+    """Client names arrive base64-encoded (`cm9zaWUtZGlzcGxheQ==` is `rosie-display`)."""
+    if not name:
+        return None
+    try:
+        return base64.b64decode(name, validate=True).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return name
+
+
+def _normalize_mac(mac: str | None) -> str | None:
+    return mac.replace("-", ":").lower() if mac else None
 
 
 class DecoClient:
@@ -148,14 +176,15 @@ class DecoClient:
             pass
         return False
 
-    def _request(self, resource: str, form: str, client: httpx.Client) -> dict:
+    def _request(self, resource: str, form: str, client: httpx.Client, params: dict | None = None) -> dict:
         if not self._stok:
             if not self._authenticate(client):
                 raise Exception(
                     "Deco authentication failed — check deco.host and deco.password in config.json"
                 )
         # All post-login requests use the same sign+data encrypted format as login
-        enc_body = self._aes_encrypt(json.dumps({"operation": "read"}))
+        body = {"operation": "read", **({"params": params} if params else {})}
+        enc_body = self._aes_encrypt(json.dumps(body))
         sign = self._sign(enc_body, include_aes_key=False)
         url = f"https://{self.host}/cgi-bin/luci/;stok={self._stok}/admin/{resource}?form={form}"
         resp = client.post(
@@ -178,26 +207,44 @@ class DecoClient:
 
     def get_connected_clients(self) -> dict:
         """Get all clients connected to the mesh with their Deco node assignment."""
-        with _session_lock:
-            return self._get_connected_clients()
+        return _cached("clients", self._get_connected_clients)
 
     def _get_connected_clients(self) -> dict:
+        # client_list needs a `device_mac` param: without one the firmware's Lua handler
+        # crashes on a nil index (HTTP 500), which once looked like an AP-mode firmware bug.
+        # "default" returns every client; a node's MAC returns only that node's clients,
+        # which is the only way to learn where a client is attached.
         try:
             with httpx.Client(verify=False, timeout=30) as client:
-                data = self._request("client", "client_list", client)
-                clients_raw = data.get("result", {}).get("client_list", [])
-                clients = [
-                    {
-                        "hostname": c.get("name", c.get("mac", "unknown")),
-                        "mac": c.get("mac"),
-                        "ip": c.get("ip"),
-                        "deco_node_mac": c.get("belong_to"),
-                        "connection": c.get("type"),
-                        "band": c.get("wire_type"),
-                    }
-                    for c in clients_raw
-                ]
-                return {"success": True, "clients": clients, "count": len(clients)}
+                nodes = self._request("device", "device_list", client).get("result", {}).get("device_list", [])
+                by_node: list[tuple[dict | None, list]] = []
+                try:
+                    for n in nodes:
+                        data = self._request("client", "client_list", client, params={"device_mac": n.get("mac")})
+                        by_node.append((n, data.get("result", {}).get("client_list", [])))
+                except Exception:
+                    by_node = []
+                if not by_node:
+                    # Per-node reads failed: still list everyone, without placement.
+                    data = self._request("client", "client_list", client, params={"device_mac": "default"})
+                    by_node = [(None, data.get("result", {}).get("client_list", []))]
+            clients = [
+                {
+                    "hostname": _decode_name(c.get("name")),
+                    "mac": _normalize_mac(c.get("mac")),
+                    "ip": c.get("ip"),
+                    "deco_node": node.get("nickname") if node else None,
+                    "deco_node_mac": _normalize_mac(node.get("mac")) if node else None,
+                    "connection": "wired" if c.get("wire_type") == "wired" else "wireless",
+                    "band": _BANDS.get(c.get("connection_type")),
+                    "client_type": c.get("client_type"),
+                    "network": c.get("interface"),
+                    "online": c.get("online"),
+                }
+                for node, clients_raw in by_node
+                for c in clients_raw
+            ]
+            return {"success": True, "clients": clients, "count": len(clients)}
         except Exception as e:
             return {
                 "success": False,
@@ -226,14 +273,7 @@ class DecoClient:
 
     def get_mesh_health(self) -> dict:
         """Get status of all Deco nodes including backhaul type, signal strength, and performance."""
-        global _mesh_cache
-        with _session_lock:
-            if _mesh_cache is not None and time.monotonic() - _mesh_cache[0] < _MESH_TTL:
-                return copy.deepcopy(_mesh_cache[1])
-            result = self._get_mesh_health()
-            if result["success"]:
-                _mesh_cache = (time.monotonic(), result)
-            return copy.deepcopy(result)
+        return _cached("mesh", self._get_mesh_health)
 
     def _get_mesh_health(self) -> dict:
         try:

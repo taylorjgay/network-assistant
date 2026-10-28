@@ -9,7 +9,7 @@ from src.tools.deco import DecoClient
 
 @pytest.fixture(autouse=True)
 def clear_mesh_cache():
-    deco_module._mesh_cache = None
+    deco_module._cache.clear()
 
 
 @pytest.fixture
@@ -72,27 +72,8 @@ DEVICE_LIST_PAYLOAD = {
 }
 
 
-def test_get_connected_clients_success(client):
-    with patch.object(client, "_request", return_value=CLIENT_LIST_PAYLOAD):
-        result = client.get_connected_clients()
-    assert result["success"] is True
-    assert result["count"] == 1
-    assert result["clients"][0]["hostname"] == "Taylors-iPhone"
-    assert result["clients"][0]["mac"] == "AA:BB:CC:DD:EE:FF"
-    assert result["clients"][0]["ip"] == "192.168.68.100"
-    assert result["clients"][0]["deco_node_mac"] == "AA:11:22:33:44:55"
-    assert result["clients"][0]["band"] == "wifi5"
 
 
-def test_get_connected_clients_fallback_hostname(client):
-    """Devices without a name field fall back to MAC as hostname."""
-    payload = {
-        "error_code": 0,
-        "result": {"client_list": [{"mac": "DE:AD:BE:EF:00:01", "ip": "192.168.68.50"}]},
-    }
-    with patch.object(client, "_request", return_value=payload):
-        result = client.get_connected_clients()
-    assert result["clients"][0]["hostname"] == "DE:AD:BE:EF:00:01"
 
 
 def test_get_mesh_health_success(client):
@@ -156,7 +137,7 @@ def test_concurrent_mesh_health_calls_share_one_fetch():
 def test_mesh_health_refetches_after_ttl(monkeypatch):
     with patch.object(DecoClient, "_request", return_value=DEVICE_LIST) as req:
         DecoClient(host="192.168.0.104", password="x").get_mesh_health()
-        monkeypatch.setattr(deco_module, "_mesh_cache", (time.monotonic() - deco_module._MESH_TTL - 1, deco_module._mesh_cache[1]))
+        deco_module._cache["mesh"] = (time.monotonic() - deco_module._MESH_TTL - 1, deco_module._cache["mesh"][1])
         DecoClient(host="192.168.0.104", password="x").get_mesh_health()
     assert [c.args[:2] for c in req.call_args_list].count(("device", "device_list")) == 2
 
@@ -164,4 +145,69 @@ def test_mesh_health_refetches_after_ttl(monkeypatch):
 def test_failed_mesh_health_is_not_cached():
     with patch.object(DecoClient, "_request", side_effect=Exception("empty reply")):
         assert DecoClient(host="192.168.0.104", password="x").get_mesh_health()["success"] is False
-    assert deco_module._mesh_cache is None
+    assert "mesh" not in deco_module._cache
+
+
+# --- Connected clients: client_list needs a device_mac param (captured live 2026-10-28) ---
+
+NODES = {"error_code": 0, "result": {"device_list": [
+    {"mac": "60-83-E7-1C-DA-FC", "nickname": "Office", "role": "master"},
+    {"mac": "60-83-E7-1C-D6-74", "nickname": "basement", "role": "slave"},
+]}}
+CLIENTS_BY_NODE = {
+    "60-83-E7-1C-DA-FC": [{"mac": "88-A2-9E-EF-28-33", "ip": "192.168.0.183", "name": "cm9zaWUtZGlzcGxheQ==",
+                           "wire_type": "wireless", "connection_type": "band5", "client_type": "iot_device",
+                           "interface": "main", "online": True, "access_host": "1"}],
+    "60-83-E7-1C-D6-74": [{"mac": "B8-27-EB-23-CB-D0", "ip": "192.168.0.200", "name": "cGlob2xl",
+                           "wire_type": "wired", "connection_type": "wired", "client_type": "other",
+                           "interface": "main", "online": True, "access_host": "1"}],
+}
+
+
+def _deco_router(per_node_fails=False):
+    seen_params = []
+
+    def request(resource, form, client, params=None):
+        if form == "device_list":
+            return NODES
+        seen_params.append(params)
+        mac = (params or {}).get("device_mac")
+        if mac is None:
+            raise Exception("Deco returned error: attempt to index field 'device_mac' (a nil value)")
+        if mac == "default":
+            return {"error_code": 0, "result": {"client_list": [c for cl in CLIENTS_BY_NODE.values() for c in cl]}}
+        if per_node_fails:
+            raise Exception("empty reply")
+        return {"error_code": 0, "result": {"client_list": CLIENTS_BY_NODE[mac]}}
+
+    return request, seen_params
+
+
+def test_connected_clients_places_each_client_on_its_node(client):
+    request, seen = _deco_router()
+    with patch.object(client, "_request", side_effect=request):
+        result = client.get_connected_clients()
+    assert result["success"] is True and result["count"] == 2
+    assert seen == [{"device_mac": "60-83-E7-1C-DA-FC"}, {"device_mac": "60-83-E7-1C-D6-74"}]
+    assert result["clients"][0] == {
+        "hostname": "rosie-display", "mac": "88:a2:9e:ef:28:33", "ip": "192.168.0.183",
+        "deco_node": "Office", "deco_node_mac": "60:83:e7:1c:da:fc", "connection": "wireless",
+        "band": "5GHz", "client_type": "iot_device", "network": "main", "online": True,
+    }
+    wired = result["clients"][1]
+    assert (wired["hostname"], wired["deco_node"], wired["connection"], wired["band"]) == ("pihole", "basement", "wired", None)
+
+
+def test_connected_clients_falls_back_to_unplaced_list(client):
+    request, seen = _deco_router(per_node_fails=True)
+    with patch.object(client, "_request", side_effect=request):
+        result = client.get_connected_clients()
+    assert result["success"] is True and result["count"] == 2
+    assert seen[-1] == {"device_mac": "default"}
+    assert {c["deco_node"] for c in result["clients"]} == {None}
+
+
+def test_decode_name_leaves_plain_names_alone():
+    assert deco_module._decode_name("cm9zaWUtZGlzcGxheQ==") == "rosie-display"
+    assert deco_module._decode_name("Taylor's iPhone") == "Taylor's iPhone"
+    assert deco_module._decode_name(None) is None
