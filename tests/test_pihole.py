@@ -95,8 +95,8 @@ def test_test_dns_resolution_not_blocked(client):
     _mock_auth()
     respx.get("http://192.168.0.10/api/queries").mock(
         return_value=httpx.Response(200, json={"queries": [
-            {"domain": "google.com", "status": 2},
-            {"domain": "google.com", "status": 3},
+            {"domain": "google.com", "status": "FORWARDED"},
+            {"domain": "google.com", "status": "CACHE"},
         ]})
     )
     result = client.test_dns_resolution("google.com")
@@ -112,7 +112,7 @@ def test_test_dns_resolution_is_blocked(client):
     _mock_auth()
     respx.get("http://192.168.0.10/api/queries").mock(
         return_value=httpx.Response(200, json={"queries": [
-            {"domain": "ads.example.com", "status": 1},
+            {"domain": "ads.example.com", "status": "GRAVITY"},
         ]})
     )
     result = client.test_dns_resolution("ads.example.com")
@@ -138,10 +138,10 @@ def test_get_query_log_default(client):
     respx.get("http://192.168.0.10/api/queries").mock(
         return_value=httpx.Response(200, json={"queries": [
             {"id": 1, "time": 1717300000.0, "type": "A", "domain": "example.com",
-             "client": {"ip": "192.168.0.50", "name": "mypc"}, "status": 2,
+             "client": {"ip": "192.168.0.50", "name": "mypc"}, "status": "FORWARDED",
              "reply": {"type": "IP", "time": 1.2}},
             {"id": 2, "time": 1717300010.0, "type": "A", "domain": "ads.bad.com",
-             "client": {"ip": "192.168.0.51", "name": "phone"}, "status": 1,
+             "client": {"ip": "192.168.0.51", "name": "phone"}, "status": "GRAVITY",
              "reply": {"type": "NXDOMAIN", "time": 0.0}},
         ]})
     )
@@ -155,18 +155,64 @@ def test_get_query_log_default(client):
 
 
 @respx.mock
-def test_get_query_log_blocked_filter(client):
+def test_get_query_log_sends_v6_param_names(client):
+    _mock_auth()
+    route = respx.get("http://192.168.0.10/api/queries").mock(
+        return_value=httpx.Response(200, json={"queries": []})
+    )
+    client.get_query_log(client="192.168.0.104", domain="example.com", limit=25)
+    params = route.calls.last.request.url.params
+    assert params["length"] == "25"
+    assert params["client_ip"] == "192.168.0.104"
+    assert params["domain"] == "example.com"
+    assert "limit" not in params and "client" not in params
+
+
+@respx.mock
+def test_get_query_log_client_hostname_uses_client_name(client):
+    _mock_auth()
+    route = respx.get("http://192.168.0.10/api/queries").mock(
+        return_value=httpx.Response(200, json={"queries": []})
+    )
+    client.get_query_log(client="mypc.lan")
+    params = route.calls.last.request.url.params
+    assert params["client_name"] == "mypc.lan"
+    assert "client_ip" not in params
+
+
+@respx.mock
+def test_get_query_log_blocked_queries_each_status_and_merges(client):
+    _mock_auth()
+
+    def by_status(request):
+        status = request.url.params["status"]
+        times = {"GRAVITY": [1717300010.0, 1717300030.0], "SPECIAL_DOMAIN": [1717300020.0]}.get(status, [])
+        return httpx.Response(200, json={"queries": [
+            {"time": t, "type": "A", "domain": f"{status.lower()}.com",
+             "client": {"ip": "192.168.0.50", "name": ""}, "status": status} for t in times
+        ]})
+
+    route = respx.get("http://192.168.0.10/api/queries").mock(side_effect=by_status)
+    result = client.get_query_log(blocked=True, limit=2)
+    assert result["success"] is True
+    assert {c.request.url.params["status"] for c in route.calls} == set(pihole_module._BLOCKED_STATUSES)
+    assert [q["timestamp"] for q in result["queries"]] == [1717300030.0, 1717300020.0]
+    assert all(q["status"] == "blocked" for q in result["queries"])
+    assert result["queries"][1]["pihole_status"] == "SPECIAL_DOMAIN"
+
+
+@respx.mock
+def test_get_query_log_unblocked_filters_out_blocked(client):
     _mock_auth()
     respx.get("http://192.168.0.10/api/queries").mock(
         return_value=httpx.Response(200, json={"queries": [
-            {"id": 3, "time": 1717300020.0, "type": "A", "domain": "tracker.com",
-             "client": {"ip": "192.168.0.50", "name": ""}, "status": 1,
-             "reply": {"type": "NXDOMAIN", "time": 0.0}},
+            {"time": 2.0, "domain": "ok.com", "client": {"ip": "192.168.0.50"}, "status": "CACHE_STALE"},
+            {"time": 1.0, "domain": "ads.com", "client": {"ip": "192.168.0.50"}, "status": "GRAVITY"},
         ]})
     )
-    result = client.get_query_log(blocked=True)
-    assert result["success"] is True
-    assert len(result["queries"]) == 1
+    result = client.get_query_log(blocked=False)
+    assert [q["domain"] for q in result["queries"]] == ["ok.com"]
+    assert result["queries"][0]["status"] == "cached"
 
 
 @respx.mock

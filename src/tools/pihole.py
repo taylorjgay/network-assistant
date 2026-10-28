@@ -1,5 +1,6 @@
 from collections import defaultdict
 from datetime import datetime, timezone
+import ipaddress
 import threading
 import time
 import httpx
@@ -20,13 +21,20 @@ def _get_auth_lock(host: str) -> threading.Lock:
             _auth_locks[host] = threading.Lock()
         return _auth_locks[host]
 
-_BLOCKED_STATUSES = {1, 4, 5, 6, 10, 12, 13, 14, 15}
+# Pi-hole v6 /api/queries reports status as a string, not the v5 integer codes.
+# Its `status` filter accepts exactly one of these per request.
+_BLOCKED_STATUSES = (
+    "GRAVITY", "REGEX", "DENYLIST",
+    "GRAVITY_CNAME", "REGEX_CNAME", "DENYLIST_CNAME",
+    "EXTERNAL_BLOCKED_IP", "EXTERNAL_BLOCKED_NULL", "EXTERNAL_BLOCKED_NXRA",
+    "EXTERNAL_BLOCKED_EDE15", "SPECIAL_DOMAIN",
+)
 
 _STATUS_NAMES = {
-    1: "blocked", 2: "forwarded", 3: "cached", 4: "blocked",
-    5: "blocked", 6: "blocked", 7: "forwarded", 8: "forwarded",
-    9: "forwarded", 10: "blocked", 11: "forwarded", 12: "blocked",
-    13: "blocked", 14: "blocked", 15: "blocked",
+    **{s: "blocked" for s in _BLOCKED_STATUSES},
+    "FORWARDED": "forwarded", "RETRIED": "forwarded", "RETRIED_DNSSEC": "forwarded",
+    "CACHE": "cached", "CACHE_STALE": "cached",
+    "IN_PROGRESS": "in_progress",
 }
 
 
@@ -105,7 +113,7 @@ class PiholeClient:
                             "error": "Authentication failed",
                             "suggestion": "Check api_token in config.json", "attempted": url}
                 resp = client.get(url, headers={"X-FTL-SID": sid},
-                                  params={"domain": hostname, "limit": 10})
+                                  params={"domain": hostname, "length": 10})
                 resp.raise_for_status()
             queries = resp.json().get("queries", [])
             blocked = [q for q in queries if q.get("status") in _BLOCKED_STATUSES]
@@ -129,30 +137,50 @@ class PiholeClient:
     ) -> dict:
         """Get recent DNS query log from Pi-hole."""
         url = f"{self._base}/queries"
-        params: dict = {"limit": limit}
-        if blocked is not None:
-            params["blocked"] = str(blocked).lower()
+        # v6 silently ignores unknown params (`limit`, `client`, `blocked`), so a
+        # wrong name returns the newest 100 queries network-wide instead of failing.
+        params: dict = {"length": limit}
         if domain:
             params["domain"] = domain
         if client:
-            params["client"] = client
+            try:
+                ipaddress.ip_address(client)
+                params["client_ip"] = client
+            except ValueError:
+                params["client_name"] = client
         try:
             with httpx.Client(timeout=10) as c:
                 sid = self._get_sid(c)
                 if sid is None:
                     return {"success": False, "error": "Authentication failed",
                             "suggestion": "Check api_token in config.json", "attempted": url}
-                resp = c.get(url, headers={"X-FTL-SID": sid}, params=params)
-                resp.raise_for_status()
-                raw_queries = resp.json().get("queries", [])
+                headers = {"X-FTL-SID": sid}
+                if blocked:
+                    # `status` takes one value per request: query each blocked status, merge newest first.
+                    raw_queries = []
+                    for status in _BLOCKED_STATUSES:
+                        resp = c.get(url, headers=headers, params={**params, "status": status})
+                        resp.raise_for_status()
+                        raw_queries.extend(resp.json().get("queries", []))
+                    raw_queries.sort(key=lambda q: q.get("time", 0), reverse=True)
+                else:
+                    if blocked is False:
+                        # Most traffic is unblocked; oversample so filtering still fills `limit`.
+                        params["length"] = limit * 2
+                    resp = c.get(url, headers=headers, params=params)
+                    resp.raise_for_status()
+                    raw_queries = resp.json().get("queries", [])
+                    if blocked is False:
+                        raw_queries = [q for q in raw_queries if q.get("status") not in _BLOCKED_STATUSES]
             queries = []
-            for q in raw_queries:
+            for q in raw_queries[:limit]:
                 client_info = q.get("client", {})
                 queries.append({
                     "domain": q.get("domain", ""),
                     "client": client_info.get("ip", "") if isinstance(client_info, dict) else str(client_info),
                     "client_name": client_info.get("name", "") if isinstance(client_info, dict) else "",
                     "status": _STATUS_NAMES.get(q.get("status"), "unknown"),
+                    "pihole_status": q.get("status", ""),
                     "type": q.get("type", ""),
                     "timestamp": q.get("time", 0),
                 })
