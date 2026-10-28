@@ -135,7 +135,7 @@ export interface Device {
   // Which Deco the device is attached to and how; refreshed in the background every ~5 min.
   access_point?: string | null
   wifi_band?: string | null
-  pihole_queries_today: number | null
+  pihole_queries_total: number | null
   pihole_last_seen: string | null
 }
 

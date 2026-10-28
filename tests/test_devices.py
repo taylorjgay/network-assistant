@@ -176,7 +176,7 @@ def test_enrich_pihole_adds_fields(tmp_path):
     devices = {
         "192.168.0.50": {
             "ip": "192.168.0.50", "mac": "aa:bb:cc:dd:ee:ff",
-            "hostname": None, "pihole_queries_today": None, "pihole_last_seen": None,
+            "hostname": None, "pihole_queries_total": None, "pihole_last_seen": None,
         }
     }
 
@@ -184,13 +184,18 @@ def test_enrich_pihole_adds_fields(tmp_path):
         MockPihole.return_value.get_clients.return_value = {
             "success": True,
             "clients": [
-                {"ip": "192.168.0.50", "hostname": "xbox", "query_count": 142, "last_query": 1717330200}
+                # Matched by MAC. The IP and hostname here are stale Pi-hole data that once put
+                # "homeserver.lan" on 16 unrelated devices; neither may be used.
+                {"ip": "192.168.0.99", "mac": "aa:bb:cc:dd:ee:ff", "hostname": "homeserver.lan",
+                 "query_count": 142, "last_query": 1717330200},
+                {"ip": "192.168.0.50", "mac": "11:22:33:44:55:66", "hostname": "someone-else",
+                 "query_count": 7, "last_query": 1717330200},
             ],
         }
         inv._enrich_pihole(devices)
 
-    assert devices["192.168.0.50"]["hostname"] == "xbox"
-    assert devices["192.168.0.50"]["pihole_queries_today"] == 142
+    assert devices["192.168.0.50"]["hostname"] is None
+    assert devices["192.168.0.50"]["pihole_queries_total"] == 142
     assert devices["192.168.0.50"]["pihole_last_seen"] is not None
 
 
@@ -199,7 +204,7 @@ def test_enrich_pihole_unavailable(tmp_path):
     devices = {
         "192.168.0.50": {
             "ip": "192.168.0.50", "mac": "aa:bb:cc:dd:ee:ff",
-            "hostname": None, "pihole_queries_today": None, "pihole_last_seen": None,
+            "hostname": None, "pihole_queries_total": None, "pihole_last_seen": None,
         }
     }
 
@@ -209,7 +214,7 @@ def test_enrich_pihole_unavailable(tmp_path):
 
     # Fields remain None — no crash
     assert devices["192.168.0.50"]["hostname"] is None
-    assert devices["192.168.0.50"]["pihole_queries_today"] is None
+    assert devices["192.168.0.50"]["pihole_queries_total"] is None
 
 
 # --- _enrich_deco ---
@@ -352,7 +357,7 @@ def test_get_network_devices_partial_enrichment(tmp_path):
     device = result["devices"][0]
     assert device["hostname"] is None
     assert device["vendor"] is None
-    assert device["pihole_queries_today"] is None
+    assert device["pihole_queries_total"] is None
     assert device["deco_node"] is None
 
 
@@ -387,3 +392,16 @@ def test_enrich_deco_clients_ignores_old_placement(tmp_path, monkeypatch):
     devices = {"192.168.0.183": _device("192.168.0.183", "88:a2:9e:ef:28:33")}
     DeviceInventory(labels_path=tmp_path / "labels.json", cfg=_cfg())._enrich_deco_clients(devices)
     assert devices["192.168.0.183"]["access_point"] is None
+
+
+def test_enrich_deco_clients_skips_generated_names(tmp_path, monkeypatch):
+    monkeypatch.setattr(deco_module, "_cache", {"clients": (time.monotonic(), {"success": True, "clients": [
+        {"mac": "c4:95:00:b9:72:f0", "hostname": "tablet_72F0", "deco_node": "Office", "connection": "wireless", "band": None},
+        {"mac": "b8:d7:af:28:82:ec", "hostname": "Rachio-2882EC", "deco_node": "Bedroom", "connection": "wireless", "band": None},
+    ]})})
+    devices = {"192.168.0.110": _device("192.168.0.110", "c4:95:00:b9:72:f0"),
+               "192.168.0.161": _device("192.168.0.161", "b8:d7:af:28:82:ec")}
+    DeviceInventory(labels_path=tmp_path / "labels.json", cfg=_cfg())._enrich_deco_clients(devices)
+    assert devices["192.168.0.110"]["hostname"] is None
+    assert devices["192.168.0.110"]["access_point"] == "Office"  # placement still shown
+    assert devices["192.168.0.161"]["hostname"] == "Rachio-2882EC"

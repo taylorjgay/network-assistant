@@ -15,6 +15,10 @@ from src.tools.pihole import PiholeClient
 # Deco client placement older than this is not shown (the dashboard refreshes it every ~5 min).
 _DECO_CLIENTS_MAX_AGE = 15 * 60.0
 
+# Devices that report no name get one made up by the Deco from their type and the last MAC
+# digits ("tablet_72F0" for c4:95:00:b9:72:f0, an Echo Dot). Not worth showing as a hostname.
+_GENERATED_DECO_NAME = re.compile(r"^[a-z]+_[0-9A-F]{4}$")
+
 _mac_lookup = MacLookup()
 _labels_lock = threading.Lock()
 
@@ -56,7 +60,7 @@ class DeviceInventory:
                     "hostname": None,
                     "vendor": self._lookup_vendor(mac),
                     "online": True,
-                    "pihole_queries_today": None,
+                    "pihole_queries_total": None,
                     "pihole_last_seen": None,
                     "deco_node": None,
                     "deco_signal_dbm": None,
@@ -158,17 +162,19 @@ class DeviceInventory:
             result = PiholeClient(**vars(self._cfg.pihole)).get_clients()
             if not result.get("success"):
                 return
+            # Match by MAC, never by IP, and take no hostnames from Pi-hole. Its network table
+            # keeps old addresses per device and attaches stale names to them: on 2026-10-28 it
+            # named 57 addresses "homeserver.lan", which then landed on whichever device held
+            # each address.
+            by_mac = {d["mac"]: d for d in devices.values() if d.get("mac")}
             for client in result.get("clients", []):
-                ip = client.get("ip", "")
-                if ip not in devices:
+                device = by_mac.get(client.get("mac"))
+                if device is None:
                     continue
-                hostname = client.get("hostname")
-                if hostname:
-                    devices[ip]["hostname"] = hostname
-                devices[ip]["pihole_queries_today"] = client.get("query_count")
+                device["pihole_queries_total"] = client.get("query_count")
                 last_query = client.get("last_query")
                 if last_query:
-                    devices[ip]["pihole_last_seen"] = datetime.fromtimestamp(
+                    device["pihole_last_seen"] = datetime.fromtimestamp(
                         last_query, tz=timezone.utc
                     ).isoformat()
         except Exception:
@@ -205,8 +211,9 @@ class DeviceInventory:
             device["access_point"] = c.get("deco_node")
             device["wifi_band"] = c.get("band")
             device["connection_type"] = c.get("connection")
-            if not device["hostname"]:
-                device["hostname"] = c.get("hostname")
+            name = c.get("hostname")
+            if not device["hostname"] and name and not _GENERATED_DECO_NAME.match(name):
+                device["hostname"] = name
 
     def _ping_sweep(self) -> None:
         """Ping all hosts in 192.168.0.1-254 in parallel to populate the ARP cache."""
