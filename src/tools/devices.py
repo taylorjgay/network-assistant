@@ -9,8 +9,11 @@ from typing import Optional
 
 from mac_vendor_lookup import MacLookup
 
-from src.tools.deco import DecoClient
+from src.tools.deco import DecoClient, cached_result as deco_cached_result
 from src.tools.pihole import PiholeClient
+
+# Deco client placement older than this is not shown (the dashboard refreshes it every ~5 min).
+_DECO_CLIENTS_MAX_AGE = 15 * 60.0
 
 _mac_lookup = MacLookup()
 _labels_lock = threading.Lock()
@@ -58,6 +61,8 @@ class DeviceInventory:
                     "deco_node": None,
                     "deco_signal_dbm": None,
                     "connection_type": None,
+                    "access_point": None,
+                    "wifi_band": None,
                 }
 
             self._enrich_pihole(devices)
@@ -174,16 +179,34 @@ class DeviceInventory:
             return
         try:
             result = DecoClient(**vars(self._cfg.deco)).get_mesh_health()
-            if not result.get("success"):
-                return
-            for node in result.get("nodes", []):
-                ip = node.get("ip")
-                if ip and ip in devices:
-                    devices[ip]["deco_node"] = node.get("nickname")
-                    devices[ip]["deco_signal_dbm"] = node.get("signal_level_dbm")
-                    devices[ip]["connection_type"] = "deco_node"
+            if result.get("success"):
+                for node in result.get("nodes", []):
+                    ip = node.get("ip")
+                    if ip and ip in devices:
+                        devices[ip]["deco_node"] = node.get("nickname")
+                        devices[ip]["deco_signal_dbm"] = node.get("signal_level_dbm")
+                        devices[ip]["connection_type"] = "deco_node"
         except Exception:
             pass
+        self._enrich_deco_clients(devices)
+
+    def _enrich_deco_clients(self, devices: dict) -> None:
+        """Which Deco each device is on, and how. Read-only: the client list costs ~25s of
+        Deco time, so the dashboard refreshes it in the background (api._refresh_deco_clients)
+        and this uses whatever is cached."""
+        clients = deco_cached_result("clients", _DECO_CLIENTS_MAX_AGE)
+        if not clients:
+            return
+        by_mac = {c["mac"]: c for c in clients.get("clients", []) if c.get("mac")}
+        for device in devices.values():
+            c = by_mac.get(device["mac"])
+            if c is None or device["connection_type"] == "deco_node":
+                continue
+            device["access_point"] = c.get("deco_node")
+            device["wifi_band"] = c.get("band")
+            device["connection_type"] = c.get("connection")
+            if not device["hostname"]:
+                device["hostname"] = c.get("hostname")
 
     def _ping_sweep(self) -> None:
         """Ping all hosts in 192.168.0.1-254 in parallel to populate the ARP cache."""

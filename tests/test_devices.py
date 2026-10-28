@@ -1,10 +1,12 @@
 import json
+import time
 import pytest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 import subprocess
 
+import src.tools.deco as deco_module
 from src.tools.devices import DeviceInventory, _normalize_mac
 
 
@@ -352,3 +354,36 @@ def test_get_network_devices_partial_enrichment(tmp_path):
     assert device["vendor"] is None
     assert device["pihole_queries_today"] is None
     assert device["deco_node"] is None
+
+
+# --- Deco client placement comes from the cached client list, never a live fetch ---
+
+def _device(ip, mac, connection_type=None, hostname=None):
+    return {"ip": ip, "mac": mac, "hostname": hostname, "connection_type": connection_type,
+            "access_point": None, "wifi_band": None}
+
+
+def test_enrich_deco_clients_uses_cached_placement(tmp_path, monkeypatch):
+    monkeypatch.setattr(deco_module, "_cache", {"clients": (time.monotonic() - 120, {"success": True, "clients": [
+        {"mac": "88:a2:9e:ef:28:33", "hostname": "rosie-display", "deco_node": "Office", "connection": "wireless", "band": "5GHz"},
+        {"mac": "60:83:e7:1c:db:20", "hostname": "Deco", "deco_node": "Bedroom", "connection": "wired", "band": None},
+    ]})})
+    devices = {
+        "192.168.0.183": _device("192.168.0.183", "88:a2:9e:ef:28:33"),
+        "192.168.0.130": _device("192.168.0.130", "60:83:e7:1c:db:20", connection_type="deco_node", hostname="Bedroom"),
+    }
+    with patch("src.tools.devices.DecoClient") as never_called:
+        DeviceInventory(labels_path=tmp_path / "labels.json", cfg=_cfg())._enrich_deco_clients(devices)
+    never_called.assert_not_called()
+    rosie = devices["192.168.0.183"]
+    assert (rosie["access_point"], rosie["wifi_band"], rosie["connection_type"], rosie["hostname"]) == \
+        ("Office", "5GHz", "wireless", "rosie-display")
+    assert devices["192.168.0.130"]["access_point"] is None  # a Deco node keeps its own row
+
+
+def test_enrich_deco_clients_ignores_old_placement(tmp_path, monkeypatch):
+    monkeypatch.setattr(deco_module, "_cache", {"clients": (time.monotonic() - 3600, {"success": True, "clients": [
+        {"mac": "88:a2:9e:ef:28:33", "deco_node": "Office", "connection": "wireless", "band": "5GHz"}]})})
+    devices = {"192.168.0.183": _device("192.168.0.183", "88:a2:9e:ef:28:33")}
+    DeviceInventory(labels_path=tmp_path / "labels.json", cfg=_cfg())._enrich_deco_clients(devices)
+    assert devices["192.168.0.183"]["access_point"] is None

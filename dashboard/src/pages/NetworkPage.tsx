@@ -248,6 +248,14 @@ export default function NetworkPage() {
                     {device.deco_node && (
                       <Badge variant="outline" className="ml-1 text-xs">Deco</Badge>
                     )}
+                    {device.access_point && (
+                      <div className="text-muted-foreground">
+                        via {device.access_point.charAt(0).toUpperCase() + device.access_point.slice(1)}
+                        {' · '}
+                        {device.wifi_band ? device.wifi_band.replace('GHz', ' GHz')
+                          : device.connection_type === 'wired' ? 'wired' : 'Wi-Fi'}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">{device.vendor ?? '—'}</TableCell>
                   <TableCell className="text-xs font-mono text-muted-foreground">

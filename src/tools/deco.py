@@ -39,6 +39,15 @@ def _cached(key: str, fetch) -> dict:
         return copy.deepcopy(result)
 
 
+def cached_result(key: str, max_age: float) -> dict | None:
+    """The last successful result under `key` if younger than `max_age`. Never fetches and
+    never waits on the session lock, which a client refresh holds for ~25s."""
+    hit = _cache.get(key)
+    if hit is None or time.monotonic() - hit[0] > max_age:
+        return None
+    return copy.deepcopy(hit[1])
+
+
 def _decode_name(name: str | None) -> str | None:
     """Client names arrive base64-encoded (`cm9zaWUtZGlzcGxheQ==` is `rosie-display`)."""
     if not name:

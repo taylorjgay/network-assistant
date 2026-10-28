@@ -34,6 +34,13 @@ _REFRESH_AFTER = 20.0
 _STALE_AFTER = 90.0
 _refresh_task: asyncio.Task | None = None
 
+# Which Deco each client is on costs ~25s of Deco time (one 5-7s query per node), so the
+# Network page never fetches it. While the dashboard is open, requests start a background
+# refresh at most this often, and the device inventory shows the cached result.
+_DECO_CLIENTS_EVERY = 300.0
+_deco_clients_started: float = float("-inf")
+_deco_clients_task: asyncio.Task | None = None
+
 # The warmer stops once the dashboard has made no snapshot request for this long.
 # React Query skips refetches in hidden tabs, so a quiet period means nobody is looking.
 _WARMER_IDLE_STOP = 120.0
@@ -125,6 +132,19 @@ async def _do_snapshot(cfg: Config) -> dict:
     }
 
 
+def _refresh_deco_clients(cfg: Config) -> None:
+    """Start a background Deco client-list refresh if the last one is old enough and done."""
+    global _deco_clients_started, _deco_clients_task
+    now = time.monotonic()
+    if now - _deco_clients_started < _DECO_CLIENTS_EVERY:
+        return
+    if _deco_clients_task is not None and not _deco_clients_task.done():
+        return
+    _deco_clients_started = now
+    _deco_clients_task = asyncio.create_task(
+        asyncio.to_thread(DecoClient(**vars(cfg.deco)).get_connected_clients))
+
+
 def _with_age(snap: dict, ts: float, now: float) -> dict:
     age = now - ts
     return {**snap, "age_seconds": round(age), "stale": age > _STALE_AFTER}
@@ -144,6 +164,10 @@ async def snapshot(cfg: Config) -> dict:
     if _snapshot_cache is not None:
         if now - _snapshot_ts > _REFRESH_AFTER and (_refresh_task is None or _refresh_task.done()):
             _refresh_task = asyncio.create_task(_background_refresh(cfg))
+        elif now - _snapshot_ts <= _STALE_AFTER:
+            # Only once the page has fresh data: the client refresh holds the Deco for ~25s,
+            # and the snapshot's own Deco call would otherwise queue behind it.
+            _refresh_deco_clients(cfg)
         return _with_age(_snapshot_cache, _snapshot_ts, now)
     async with _snapshot_lock:
         if _snapshot_cache is None:
@@ -234,6 +258,7 @@ async def mesh_health(cfg: Config) -> dict:
 
 
 async def get_devices(cfg: Config, deep_scan: bool = False) -> dict:
+    _refresh_deco_clients(cfg)
     inventory = DeviceInventory(labels_path=_LABELS_PATH, cfg=cfg)
     return await asyncio.to_thread(inventory.get_network_devices, deep_scan)
 

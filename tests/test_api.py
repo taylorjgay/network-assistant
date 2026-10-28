@@ -259,6 +259,9 @@ def snapshot_state(monkeypatch):
     monkeypatch.setattr(api_module, "_snapshot_cache", None)
     monkeypatch.setattr(api_module, "_snapshot_ts", 0.0)
     monkeypatch.setattr(api_module, "_refresh_task", None)
+    clients_refresh = MagicMock()
+    monkeypatch.setattr(api_module, "_refresh_deco_clients", clients_refresh)
+    return clients_refresh
 
 
 def test_snapshot_serves_weeks_old_cache_immediately_and_refreshes(snapshot_state, monkeypatch):
@@ -276,6 +279,7 @@ def test_snapshot_serves_weeks_old_cache_immediately_and_refreshes(snapshot_stat
     assert served["wan"] == {"old": True}
     assert served["stale"] is True and served["age_seconds"] >= three_weeks
     assert calls == 1
+    snapshot_state.assert_not_called()  # the ~25s client refresh waits for fresh data
     assert api_module._snapshot_cache == {"wan": {"old": False}}
 
 
@@ -291,6 +295,7 @@ def test_snapshot_fresh_cache_is_not_stale_and_not_refreshed(snapshot_state, mon
     served, calls = asyncio.run(run())
     assert served["stale"] is False and calls == 0
     assert api_module._refresh_task is None
+    snapshot_state.assert_called_once()
 
 
 def test_snapshot_without_cache_waits_for_a_real_one(snapshot_state):
@@ -301,3 +306,18 @@ def test_snapshot_without_cache_waits_for_a_real_one(snapshot_state):
     served = asyncio.run(run())
     assert served["wan"] == {"live": True}
     assert served["stale"] is False and served["age_seconds"] == 0
+
+
+def test_deco_clients_refresh_runs_at_most_every_five_minutes(monkeypatch):
+    monkeypatch.setattr(api_module, "_deco_clients_started", float("-inf"))
+    monkeypatch.setattr(api_module, "_deco_clients_task", None)
+
+    async def run():
+        with patch("src.api.DecoClient") as mock_deco:
+            mock_deco.return_value.get_connected_clients.return_value = {"success": True, "clients": []}
+            api_module._refresh_deco_clients(_mock_cfg())
+            await api_module._deco_clients_task
+            api_module._refresh_deco_clients(_mock_cfg())  # too soon: ignored
+            return mock_deco.return_value.get_connected_clients.call_count
+
+    assert asyncio.run(run()) == 1

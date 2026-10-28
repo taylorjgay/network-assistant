@@ -132,6 +132,9 @@ export interface Device {
   deco_node: string | null
   deco_signal_dbm: number | null
   connection_type: string | null
+  // Which Deco the device is attached to and how; refreshed in the background every ~5 min.
+  access_point?: string | null
+  wifi_band?: string | null
   pihole_queries_today: number | null
   pihole_last_seen: string | null
 }
