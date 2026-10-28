@@ -1,6 +1,11 @@
 import json
+import time
 import httpx
 
+
+# Monotonic time of this process's most recent successful ER605 login. ER605Session
+# uses it to tell its own tool calls apart from someone opening the web UI.
+_last_login_at = 0.0
 
 _HEADERS = {
     "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -83,6 +88,9 @@ class ER605Client:
             return None, detail
 
         stok = resp2.get("result", {}).get("stok")
+        if stok:
+            global _last_login_at
+            _last_login_at = time.monotonic()
         return stok, ""
 
     def _api(self, client: httpx.Client, stok: str, resource: str, form: str) -> dict:
@@ -538,32 +546,7 @@ class ER605Client:
                         "attempted": url,
                     }
                 data = self._api(client, stok, "interface", "status2")
-
-            if data.get("error_code") != "0":
-                return {
-                    "success": False,
-                    "error": f"ER605 interface endpoint error {data.get('error_code')}",
-                    "suggestion": "WAN status endpoint may differ on this firmware version",
-                    "attempted": url,
-                    "raw": data,
-                }
-
-            interfaces = data.get("result", {}).get("normal", [])
-            wan_ports = [i for i in interfaces if i.get("t_name", "").startswith("WAN")]
-            return {
-                "success": True,
-                "interfaces": [
-                    {
-                        "name": i.get("t_name"),
-                        "up": i.get("t_isup"),
-                        "ip": i.get("ipaddr"),
-                        "proto": i.get("t_proto"),
-                        "gateway": i.get("gateway"),
-                        "dns1": i.get("dns1"),
-                    }
-                    for i in wan_ports
-                ],
-            }
+            return parse_wan_status(data, url)
         except httpx.ConnectError:
             return {
                 "success": False,
@@ -594,28 +577,7 @@ class ER605Client:
                     headers=self._headers(),
                 )
                 locale_result = locale_resp.json().get("result", {})
-
-            if fw_data.get("error_code") != "0":
-                return {
-                    "success": False,
-                    "error": f"ER605 firmware endpoint error {fw_data.get('error_code')}",
-                    "suggestion": "Firmware info endpoint may differ on this firmware version",
-                    "attempted": url,
-                    "raw": fw_data,
-                }
-
-            fw = fw_data.get("result", {})
-            sys = sys_data.get("result", {}) if sys_data.get("error_code") == "0" else {}
-            cpu = sys.get("cpu_usage", {})
-            mem = sys.get("mem_usage", {}).get("mem")
-            return {
-                "success": True,
-                "model": fw.get("hardware_version") or fw.get("model"),
-                "firmware": fw.get("firmware_version"),
-                "uptime_seconds": locale_result.get("uptime"),
-                "cpu_percent": round(sum(cpu.values()) / len(cpu)) if cpu else None,
-                "mem_percent": mem,
-            }
+            return parse_router_info(fw_data, sys_data, locale_result.get("uptime"), url)
         except httpx.ConnectError:
             return {
                 "success": False,
@@ -625,3 +587,122 @@ class ER605Client:
             }
         except Exception as e:
             return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+
+
+def parse_wan_status(data: dict, url: str) -> dict:
+    """Shape an `interface/status2` response into the get_wan_status result."""
+    if data.get("error_code") != "0":
+        return {
+            "success": False,
+            "error": f"ER605 interface endpoint error {data.get('error_code')}",
+            "suggestion": "WAN status endpoint may differ on this firmware version",
+            "attempted": url,
+            "raw": data,
+        }
+
+    interfaces = data.get("result", {}).get("normal", [])
+    wan_ports = [i for i in interfaces if i.get("t_name", "").startswith("WAN")]
+    return {
+        "success": True,
+        "interfaces": [
+            {
+                "name": i.get("t_name"),
+                "up": i.get("t_isup"),
+                "ip": i.get("ipaddr"),
+                "proto": i.get("t_proto"),
+                "gateway": i.get("gateway"),
+                "dns1": i.get("dns1"),
+            }
+            for i in wan_ports
+        ],
+    }
+
+
+def parse_router_info(fw_data: dict, sys_data: dict, uptime, url: str) -> dict:
+    """Shape `firmware/upgrade` + `sys_status/all_usage` responses into the get_router_info result."""
+    if fw_data.get("error_code") != "0":
+        return {
+            "success": False,
+            "error": f"ER605 firmware endpoint error {fw_data.get('error_code')}",
+            "suggestion": "Firmware info endpoint may differ on this firmware version",
+            "attempted": url,
+            "raw": fw_data,
+        }
+
+    fw = fw_data.get("result", {})
+    sys = sys_data.get("result", {}) if sys_data.get("error_code") == "0" else {}
+    cpu = sys.get("cpu_usage", {})
+    mem = sys.get("mem_usage", {}).get("mem")
+    return {
+        "success": True,
+        "model": fw.get("hardware_version") or fw.get("model"),
+        "firmware": fw.get("firmware_version"),
+        "uptime_seconds": uptime,
+        "cpu_percent": round(sum(cpu.values()) / len(cpu)) if cpu else None,
+        "mem_percent": mem,
+    }
+
+
+class ER605Evicted(Exception):
+    """A login from outside this process (normally the web UI) replaced our session."""
+
+
+class ER605Session:
+    """One long-lived ER605 login for background polling.
+
+    The ER605 allows a single admin session: every login kicks out the previous one,
+    including a person using the web UI. Reusing one session means polling only logs in
+    when it must. The stok is bound to the `sysauth` cookie, so the session keeps one
+    client for its lifetime (a stok sent from a fresh client gets 704).
+    """
+
+    _EXPIRED = "704"  # stok unknown: session timed out or the router rebooted
+    _EVICTED = "711"  # stok replaced by a newer login
+
+    def __init__(self, host: str, username: str, password: str):
+        self._er = ER605Client(host, username, password)
+        self._client: httpx.Client | None = None
+        self._stok: str | None = None
+        self._logged_in_at = 0.0
+
+    def _open(self) -> None:
+        self.close()
+        self._client = httpx.Client(verify=False, timeout=10)
+        stok, err = self._er._login(self._client)
+        if stok is None:
+            self.close()
+            raise RuntimeError(f"ER605 authentication failed: {err}")
+        self._stok = stok
+        self._logged_in_at = _last_login_at
+
+    def close(self) -> None:
+        if self._client is not None:
+            self._client.close()
+        self._client = None
+        self._stok = None
+
+    def get(self, resource: str, form: str) -> dict:
+        """Read an admin endpoint. Raises ER605Evicted if someone else took the session."""
+        if self._stok is None:
+            self._open()
+        data = self._er._api(self._client, self._stok, resource, form)
+        code = str(data.get("error_code"))
+        if code == self._EVICTED and _last_login_at <= self._logged_in_at:
+            self.close()
+            raise ER605Evicted()
+        if code in (self._EXPIRED, self._EVICTED):
+            # Timed out, or replaced by one of this process's own tool calls: log in again.
+            self._open()
+            data = self._er._api(self._client, self._stok, resource, form)
+        return data
+
+    def uptime(self):
+        """Router uptime in seconds (unauthenticated locale endpoint)."""
+        if self._client is None:
+            self._open()
+        resp = self._client.post(
+            f"{self._er._base}/cgi-bin/luci/;stok=/locale?form=lang",
+            data={"operation": "read"},
+            headers=self._er._headers(),
+        )
+        return resp.json().get("result", {}).get("uptime")

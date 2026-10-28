@@ -1,7 +1,14 @@
 # tests/test_api.py
+import asyncio
+import time
 from unittest.mock import patch, MagicMock
+
+import pytest
 from starlette.testclient import TestClient
+
+import src.api as api_module
 import src.server as server_module
+from src.tools.er605 import ER605Evicted
 
 
 def _mock_cfg():
@@ -14,15 +21,12 @@ def _mock_cfg():
 
 def test_snapshot_returns_expected_keys():
     with patch("src.server._cfg", _mock_cfg()), \
-         patch("src.api.WANHealthClient") as mock_wan, \
+         patch("src.api._poll_er605", return_value=({"success": True, "wan1": {}}, {"success": True})), \
          patch("src.api.PiholeClient") as mock_pihole, \
-         patch("src.api.DecoClient") as mock_deco, \
-         patch("src.api.ER605Client") as mock_er605:
+         patch("src.api.DecoClient") as mock_deco:
 
-        mock_wan.return_value.get_wan_health.return_value = {"success": True, "wan1": {}}
         mock_pihole.return_value.get_pihole_stats.return_value = {"success": True}
         mock_deco.return_value.get_mesh_health.return_value = {"success": True, "nodes": []}
-        mock_er605.return_value.get_router_info.return_value = {"success": True}
 
         client = TestClient(server_module.mcp.sse_app())
         resp = client.get("/api/snapshot")
@@ -183,3 +187,66 @@ def test_pihole_domains_delete_route():
         resp = client.delete("/api/pihole/domains/block/exact/ads.example.com")
         assert resp.status_code == 200
         assert resp.json()["success"] is True
+
+
+# --- ER605 polling: back off when someone else logs in; warmer stops when idle ---
+
+@pytest.fixture
+def fresh_er605_state(monkeypatch):
+    monkeypatch.setattr(api_module, "_er605_session", None)
+    monkeypatch.setattr(api_module, "_er605_paused_until", 0.0)
+    monkeypatch.setattr(api_module, "_er605_last", None)
+
+
+def test_poll_er605_pauses_and_serves_last_data_when_evicted(fresh_er605_state, monkeypatch):
+    last_wan, last_router = {"success": True, "active_wan": "WAN1"}, {"success": True, "model": "ER605 v2.0"}
+    monkeypatch.setattr(api_module, "_er605_last", (last_wan, last_router))
+    with patch("src.api.ER605Session") as mock_session:
+        mock_session.return_value.get.side_effect = ER605Evicted()
+        wan, router = api_module._poll_er605(_mock_cfg())
+        assert wan["paused"] is True and router["paused"] is True
+        assert wan["active_wan"] == "WAN1" and router["model"] == "ER605 v2.0"
+        assert router["paused_seconds_left"] == api_module._ER605_PAUSE
+
+        # While paused, the router is not touched at all.
+        api_module._poll_er605(_mock_cfg())
+        assert mock_session.return_value.get.call_count == 1
+
+
+def test_poll_er605_evicted_with_no_previous_data(fresh_er605_state):
+    with patch("src.api.ER605Session") as mock_session:
+        mock_session.return_value.get.side_effect = ER605Evicted()
+        wan, router = api_module._poll_er605(_mock_cfg())
+    assert router["success"] is False and router["paused"] is True
+    assert "web UI" in router["error"]
+
+
+def test_poll_er605_resumes_after_pause(fresh_er605_state, monkeypatch):
+    monkeypatch.setattr(api_module, "_er605_paused_until", time.monotonic() - 1)
+    with patch("src.api.ER605Session") as mock_session, \
+         patch("src.api.health_from_wan_status", return_value={"success": True, "active_wan": "WAN1"}):
+        mock_session.return_value.get.side_effect = [
+            {"error_code": "0", "result": {"normal": []}},
+            {"error_code": "0", "result": {"hardware_version": "ER605 v2.0"}},
+            {"error_code": "0", "result": {}},
+        ]
+        mock_session.return_value.uptime.return_value = 100
+        wan, router = api_module._poll_er605(_mock_cfg())
+    assert "paused" not in router and router["model"] == "ER605 v2.0"
+    assert api_module._er605_last == (wan, router)
+
+
+def test_warmer_stops_when_dashboard_idle(monkeypatch):
+    sleeps = []
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 2:  # dashboard closed after the first refresh
+            monkeypatch.setattr(api_module, "_last_snapshot_request", time.monotonic() - 10_000)
+
+    monkeypatch.setattr(api_module, "_last_snapshot_request", time.monotonic())
+    monkeypatch.setattr(api_module.asyncio, "sleep", fake_sleep)
+    with patch("src.api._do_snapshot", return_value={"wan": {}}) as mock_snapshot:
+        asyncio.run(api_module.warm_snapshot_loop(_mock_cfg()))
+    assert mock_snapshot.call_count == 1
+    assert len(sleeps) == 2

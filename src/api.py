@@ -8,7 +8,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from src.config import Config
 from src.tools.deco import DecoClient
 from src.tools.devices import DeviceInventory
-from src.tools.er605 import ER605Client
+from src.tools.er605 import ER605Client, ER605Evicted, ER605Session, parse_router_info, parse_wan_status
 from src.tools.pihole import PiholeClient
 from src.tools.upnp import get_upnp_portmaps, get_upnp_status
 from src.tools.diagnostics import (
@@ -17,7 +17,7 @@ from src.tools.diagnostics import (
     run_speedtest as _run_speedtest,
     test_dns_resolution as _test_dns_resolution,
 )
-from src.tools.wan_health import WANHealthClient
+from src.tools.wan_health import WANHealthClient, health_from_wan_status
 from src.tools.wan_speed import WANSpeedClient
 
 _LABELS_PATH = Path(__file__).parent.parent / "devices.json"
@@ -28,14 +28,63 @@ _snapshot_ts: float = 0.0
 _snapshot_lock = asyncio.Lock()
 _SNAPSHOT_TTL = 25.0
 
+# The warmer stops once the dashboard has made no snapshot request for this long.
+# React Query skips refetches in hidden tabs, so a quiet period means nobody is looking.
+_WARMER_IDLE_STOP = 120.0
+_last_snapshot_request: float = 0.0
+
+# The ER605 allows one admin session, so polling holds a single reused login. When someone
+# else logs in (normally the web UI), stop polling the router for a while rather than
+# kicking them out on the next cycle. Calls run under _snapshot_lock, never concurrently.
+_ER605_PAUSE = 15 * 60.0
+_er605_session: ER605Session | None = None
+_er605_paused_until: float = 0.0
+_er605_last: tuple[dict, dict] | None = None
+
+
+def _er605_paused(now: float) -> tuple[dict, dict]:
+    note = {"paused": True, "paused_seconds_left": round(_er605_paused_until - now)}
+    if _er605_last is not None:
+        wan, router = _er605_last
+        return {**wan, **note}, {**router, **note}
+    err = {"success": False, "error": "Paused: someone is logged in to the router web UI", **note}
+    return err, dict(err)
+
+
+def _poll_er605(cfg: Config) -> tuple[dict, dict]:
+    """WAN health and router info over the shared ER605 session. Blocking; run in a thread."""
+    global _er605_session, _er605_paused_until, _er605_last
+    now = time.monotonic()
+    if now < _er605_paused_until:
+        return _er605_paused(now)
+    if _er605_session is None:
+        _er605_session = ER605Session(**vars(cfg.er605))
+    url = f"https://{cfg.er605.host}"
+    try:
+        status = _er605_session.get("interface", "status2")
+        fw = _er605_session.get("firmware", "upgrade")
+        sys_usage = _er605_session.get("sys_status", "all_usage")
+        uptime = _er605_session.uptime()
+    except ER605Evicted:
+        _er605_paused_until = now + _ER605_PAUSE
+        return _er605_paused(now)
+    except Exception as e:
+        _er605_session.close()
+        err = {"success": False, "error": str(e), "suggestion": "Check ER605 connectivity at the configured host", "attempted": url}
+        return err, dict(err)
+
+    wan_status = parse_wan_status(status, url)
+    wan = health_from_wan_status(wan_status) if wan_status["success"] else wan_status
+    router = parse_router_info(fw, sys_usage, uptime, url)
+    if wan.get("success") and router.get("success"):
+        _er605_last = (wan, router)
+    return wan, router
+
 
 async def _do_snapshot(cfg: Config) -> dict:
-    # ER605 rejects concurrent logins from the same IP — run wan+router sequentially.
     # Pi-hole and Deco hit different devices so they run in parallel with ER605.
     async def _er605_sequential():
-        w = await asyncio.to_thread(WANHealthClient(**vars(cfg.er605)).get_wan_health)
-        r = await asyncio.to_thread(ER605Client(**vars(cfg.er605)).get_router_info)
-        return w, r
+        return await asyncio.to_thread(_poll_er605, cfg)
 
     async def _pihole_data():
         stats, sys_info = await asyncio.gather(
@@ -71,8 +120,9 @@ async def _do_snapshot(cfg: Config) -> dict:
 
 
 async def snapshot(cfg: Config) -> dict:
-    global _snapshot_cache, _snapshot_ts
+    global _snapshot_cache, _snapshot_ts, _last_snapshot_request
     now = time.monotonic()
+    _last_snapshot_request = now
     if _snapshot_cache is not None and (now - _snapshot_ts) < _SNAPSHOT_TTL:
         if (now - _snapshot_ts) > 20.0:
             asyncio.create_task(_background_refresh(cfg))
@@ -101,11 +151,14 @@ async def _background_refresh(cfg: Config) -> None:
 
 
 async def warm_snapshot_loop(cfg: Config) -> None:
-    """Runs continuously, refreshing the snapshot cache every 25s.
-    Started on first snapshot request so the cache stays warm between visits."""
+    """Refreshes the snapshot cache every 25s while the dashboard is being viewed.
+    Started on a snapshot request; exits after _WARMER_IDLE_STOP without one, and the
+    next snapshot request starts it again."""
     global _snapshot_cache, _snapshot_ts
     while True:
         await asyncio.sleep(25)
+        if time.monotonic() - _last_snapshot_request > _WARMER_IDLE_STOP:
+            return
         async with _snapshot_lock:
             try:
                 result = await _do_snapshot(cfg)

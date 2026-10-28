@@ -64,6 +64,9 @@ export interface RouterInfo {
   cpu_percent: number | null
   mem_percent: number | null
   error?: string
+  // Set while router polling backs off because someone else is logged in to the ER605.
+  paused?: boolean
+  paused_seconds_left?: number
 }
 
 export interface Snapshot {

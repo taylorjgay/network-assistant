@@ -2,7 +2,8 @@ import re
 import pytest
 import respx
 import httpx
-from src.tools.er605 import ER605Client, _rsa_encrypt
+from src.tools import er605 as er605_module
+from src.tools.er605 import ER605Client, ER605Evicted, ER605Session, _rsa_encrypt
 
 # Fake 1024-bit RSA modulus (256 hex chars of 'a')
 MODULUS_HEX = "a" * 256
@@ -610,3 +611,88 @@ def test_remove_firewall_rule_error_1014(client):
     assert result["success"] is False
     assert "1014" in result["error"]
     assert "standalone" in result["suggestion"]
+
+
+# --- ER605Session: one reused login for background polling ---
+
+USAGE_URL = re.compile(rf"{re.escape(BASE)}/cgi-bin/luci/;stok=(\w+)/admin/sys_status\?form=all_usage")
+USAGE_OK = {"id": 1, "result": {"cpu_usage": {"core1": 5}}, "error_code": "0"}
+
+
+def _mock_logins(stoks):
+    """Each login (pre-login get + login) hands out the next stok in turn."""
+    issued = iter(stoks)
+
+    def handler(request):
+        if b"%22login%22" in request.content:
+            return _step2_response(next(issued))
+        return _step1_response()
+
+    return respx.post(LOGIN_URL).mock(side_effect=handler)
+
+
+def _mock_usage(valid_stok, stale_code):
+    """sys_status answers only the current stok; any other gets `stale_code` (an int, as the router sends)."""
+    def handler(request):
+        stok = USAGE_URL.match(str(request.url)).group(1)
+        if stok == valid_stok():
+            return httpx.Response(200, json=USAGE_OK)
+        return httpx.Response(200, json={"id": 1, "error_code": stale_code})
+
+    return respx.post(USAGE_URL).mock(side_effect=handler)
+
+
+@respx.mock
+def test_session_reuses_one_login():
+    logins = _mock_logins(["s1"])
+    _mock_usage(lambda: "s1", 704)
+    session = ER605Session("192.168.0.1", "admin", "secret")
+    for _ in range(3):
+        assert session.get("sys_status", "all_usage")["error_code"] == "0"
+    # two POSTs (pre-login get + login) for a single login
+    assert logins.call_count == 2
+
+
+@respx.mock
+def test_session_evicted_by_outside_login_raises():
+    _mock_logins(["s1"])
+    _mock_usage(lambda: "someone-else", 711)
+    session = ER605Session("192.168.0.1", "admin", "secret")
+    with pytest.raises(ER605Evicted):
+        session.get("sys_status", "all_usage")
+
+
+@respx.mock
+def test_session_relogs_in_after_own_tool_call_login():
+    current = {"stok": "s1"}
+    _mock_logins(["s1", "tool", "s2"])
+    _mock_usage(lambda: current["stok"], 711)
+    session = ER605Session("192.168.0.1", "admin", "secret")
+    session.get("sys_status", "all_usage")
+
+    # One of this process's own tools logs in, replacing the session's stok.
+    with httpx.Client(verify=False) as c:
+        ER605Client("192.168.0.1", "admin", "secret")._login(c)
+    current["stok"] = "s2"
+
+    assert session.get("sys_status", "all_usage")["error_code"] == "0"
+
+
+@respx.mock
+def test_session_relogs_in_when_expired():
+    current = {"stok": "s1"}
+    _mock_logins(["s1", "s2"])
+    _mock_usage(lambda: current["stok"], 704)
+    session = ER605Session("192.168.0.1", "admin", "secret")
+    session.get("sys_status", "all_usage")
+    current["stok"] = "s2"  # router forgot s1 (timeout or reboot)
+    assert session.get("sys_status", "all_usage")["error_code"] == "0"
+
+
+def test_login_records_time():
+    er605_module._last_login_at = 0.0
+    with respx.mock:
+        _mock_logins(["s1"])
+        with httpx.Client(verify=False) as c:
+            ER605Client("192.168.0.1", "admin", "secret")._login(c)
+    assert er605_module._last_login_at > 0.0

@@ -50,6 +50,40 @@ def _is_degraded(probe: dict) -> bool:
             (probe.get("avg_latency_ms") or 0.0) > _DEGRADED_LATENCY_MS)
 
 
+def health_from_wan_status(wan_status: dict) -> dict:
+    """Combine a successful get_wan_status result with a ping probe into the get_wan_health result."""
+    ifaces = {i["name"]: i for i in wan_status.get("interfaces", [])}
+
+    def _parse(name: str) -> dict | None:
+        i = ifaces.get(name)
+        if i is None:
+            return None
+        return {
+            "link": "up" if i.get("up") else "down",
+            "ip": i.get("ip") or None,
+            "gateway": i.get("gateway") or None,
+        }
+
+    wan1 = _parse("WAN1")
+    wan2 = _parse("WAN2")
+
+    active_wan = None
+    if wan1 and wan1["link"] == "up" and wan1["ip"]:
+        active_wan = "WAN1"
+    elif wan2 and wan2["link"] == "up" and wan2["ip"]:
+        active_wan = "WAN2"
+
+    probe = _probe()
+    return {
+        "success": True,
+        "active_wan": active_wan,
+        "wan1": wan1,
+        "wan2": wan2,
+        "probe": probe,
+        "degraded": _is_degraded(probe),
+    }
+
+
 class WANHealthClient:
     def __init__(self, host: str, username: str, password: str):
         self._kwargs = {"host": host, "username": username, "password": password}
@@ -63,37 +97,7 @@ class WANHealthClient:
             wan_status = self._er605().get_wan_status()
             if not wan_status["success"]:
                 return wan_status
-
-            ifaces = {i["name"]: i for i in wan_status.get("interfaces", [])}
-
-            def _parse(name: str) -> dict | None:
-                i = ifaces.get(name)
-                if i is None:
-                    return None
-                return {
-                    "link": "up" if i.get("up") else "down",
-                    "ip": i.get("ip") or None,
-                    "gateway": i.get("gateway") or None,
-                }
-
-            wan1 = _parse("WAN1")
-            wan2 = _parse("WAN2")
-
-            active_wan = None
-            if wan1 and wan1["link"] == "up" and wan1["ip"]:
-                active_wan = "WAN1"
-            elif wan2 and wan2["link"] == "up" and wan2["ip"]:
-                active_wan = "WAN2"
-
-            probe = _probe()
-            return {
-                "success": True,
-                "active_wan": active_wan,
-                "wan1": wan1,
-                "wan2": wan2,
-                "probe": probe,
-                "degraded": _is_degraded(probe),
-            }
+            return health_from_wan_status(wan_status)
         except Exception as e:
             return {"success": False, "error": str(e), "suggestion": "Check ER605 connectivity at the configured host", "attempted": url}
 

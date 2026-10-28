@@ -76,7 +76,9 @@ export default function OverviewPage() {
           <div>
             <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Router</div>
             <div className="text-xs text-muted-foreground mt-0.5">
-              {router?.success
+              {router?.paused
+                ? `Paused while the router web UI is in use · resumes in ${Math.max(1, Math.ceil((router.paused_seconds_left ?? 0) / 60))}m`
+                : router?.success
                 ? [
                     router.model,
                     router.cpu_percent != null ? `CPU ${router.cpu_percent}%` : null,
