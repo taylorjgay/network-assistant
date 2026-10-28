@@ -280,6 +280,8 @@ export interface TopClientsResult {
 export interface PiholeClientEntry {
   ip: string
   hostname: string
+  mac?: string
+  vendor?: string
   query_count: number
   last_query: number
 }

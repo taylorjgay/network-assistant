@@ -1,7 +1,9 @@
 import base64
+import copy
 import hashlib
 import json
 import os
+import threading
 import time
 from urllib.parse import urlencode
 
@@ -10,6 +12,17 @@ from Crypto.Cipher import AES
 from Crypto.Cipher import PKCS1_v1_5 as PKCS1_Cipher
 from Crypto.PublicKey import RSA
 from Crypto.Util.Padding import pad, unpad
+
+# Two Deco logins at once invalidate each other mid-request, which surfaces as an empty
+# reply ("Expecting value: line 1 column 1"). The Network page alone fires two (/mesh and
+# /devices), and the snapshot refresh adds a third, so every Deco call in this process
+# takes this lock.
+_session_lock = threading.Lock()
+
+# A Deco login costs ~3-9s, so get_mesh_health results are shared for this long: callers
+# that queued on the lock get the result the first caller just fetched.
+_MESH_TTL = 20.0
+_mesh_cache: tuple[float, dict] | None = None
 
 
 class DecoClient:
@@ -165,6 +178,10 @@ class DecoClient:
 
     def get_connected_clients(self) -> dict:
         """Get all clients connected to the mesh with their Deco node assignment."""
+        with _session_lock:
+            return self._get_connected_clients()
+
+    def _get_connected_clients(self) -> dict:
         try:
             with httpx.Client(verify=False, timeout=30) as client:
                 data = self._request("client", "client_list", client)
@@ -191,6 +208,10 @@ class DecoClient:
 
     def get_deco_performance(self) -> dict:
         """Get CPU and memory usage from the primary Deco node."""
+        with _session_lock:
+            return self._get_deco_performance()
+
+    def _get_deco_performance(self) -> dict:
         try:
             with httpx.Client(verify=False, timeout=30) as client:
                 data = self._request("network", "performance", client)
@@ -205,6 +226,16 @@ class DecoClient:
 
     def get_mesh_health(self) -> dict:
         """Get status of all Deco nodes including backhaul type, signal strength, and performance."""
+        global _mesh_cache
+        with _session_lock:
+            if _mesh_cache is not None and time.monotonic() - _mesh_cache[0] < _MESH_TTL:
+                return copy.deepcopy(_mesh_cache[1])
+            result = self._get_mesh_health()
+            if result["success"]:
+                _mesh_cache = (time.monotonic(), result)
+            return copy.deepcopy(result)
+
+    def _get_mesh_health(self) -> dict:
         try:
             with httpx.Client(verify=False, timeout=30) as client:
                 data = self._request("device", "device_list", client)

@@ -349,8 +349,9 @@ export default function DnsPage() {
                 .sort((a, b) => b.query_count - a.query_count)
                 .map((c, i) => (
                   <TableRow key={i}>
-                    <TableCell className="text-xs font-mono">{c.ip}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{c.hostname || '—'}</TableCell>
+                    {/* Pi-hole keeps no address for some devices; the MAC still identifies them. */}
+                    <TableCell className="text-xs font-mono">{c.ip || c.mac || '—'}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{c.hostname || c.vendor || '—'}</TableCell>
                     <TableCell className="text-xs text-right">{c.query_count.toLocaleString()}</TableCell>
                     <TableCell className="text-xs text-right text-muted-foreground">
                       {c.last_query ? formatDistanceToNow(new Date(c.last_query * 1000), { addSuffix: true }) : '—'}

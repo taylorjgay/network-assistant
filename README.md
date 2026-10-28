@@ -37,7 +37,7 @@ Ask Claude about your network in plain English. It calls the right tools and ret
 
 **5-tab React dashboard** (Overview · Network · DNS · Firewall · Diagnostics) with auto-refresh, dark/light mode, and a live blocking toggle for Pi-hole.
 
-**203 tests, all mocked.** No live devices needed to run the test suite.
+**206 tests, all mocked.** No live devices needed to run the test suite.
 
 ## Requirements
 
@@ -109,7 +109,7 @@ Device labels are stored in `devices.json` (also gitignored). It's created autom
 .venv/bin/pytest -v
 ```
 
-203 tests, all mocked. No live devices needed.
+206 tests, all mocked. No live devices needed.
 
 ---
 

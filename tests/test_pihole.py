@@ -337,19 +337,27 @@ def test_get_domain_lists_empty(client):
 
 @respx.mock
 def test_get_clients(client):
+    """Shape captured from Pi-hole v6.5 /api/network/devices, 2026-10-28."""
     _mock_auth()
-    respx.get("http://192.168.0.10/api/clients").mock(
-        return_value=httpx.Response(200, json={"clients": [
-            {"ip": "192.168.0.50", "name": "mypc", "count": 800, "last_query": 1717300000},
-            {"ip": "192.168.0.51", "name": "", "count": 200, "last_query": 1717290000},
-        ]})
+    route = respx.get("http://192.168.0.10/api/network/devices").mock(
+        return_value=httpx.Response(200, json={"devices": [
+            {"id": 29, "hwaddr": "1a:24:44:1a:5b:27", "interface": "eth0", "firstSeen": 1780441846,
+             "lastQuery": 1793219876, "numQueries": 1926505, "macVendor": "Amazon Technologies Inc.",
+             "ips": [
+                 {"ip": "192.168.0.120", "name": None, "lastSeen": 1793000000, "nameUpdated": 0},
+                 {"ip": "192.168.0.166", "name": "homeserver.lan", "lastSeen": 1793219880, "nameUpdated": 1793219880},
+             ]},
+            {"id": 30, "hwaddr": "c4:13:75:d7:13:f8", "interface": "eth0", "firstSeen": 1780441846,
+             "lastQuery": 0, "numQueries": 0, "macVendor": "", "ips": [{"ip": "192.168.0.184", "name": None, "lastSeen": 1}]},
+        ], "took": 0.003})
     )
     result = client.get_clients()
+    assert route.calls.last.request.url.params["max_devices"] == "1000"
     assert result["success"] is True
-    assert len(result["clients"]) == 2
-    assert result["clients"][0]["ip"] == "192.168.0.50"
-    assert result["clients"][0]["hostname"] == "mypc"
-    assert result["clients"][0]["query_count"] == 800
+    assert result["clients"] == [{
+        "ip": "192.168.0.166", "hostname": "homeserver.lan", "mac": "1a:24:44:1a:5b:27",
+        "vendor": "Amazon Technologies Inc.", "query_count": 1926505, "last_query": 1793219876,
+    }]
 
 
 @respx.mock

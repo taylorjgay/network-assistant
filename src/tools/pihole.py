@@ -421,23 +421,35 @@ class PiholeClient:
             return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
 
     def get_clients(self) -> dict:
-        url = f"{self._base}/clients"
+        """Devices that have sent Pi-hole queries, from its network table.
+
+        Not /api/clients: in v6 that lists clients configured for group management, which is
+        empty unless someone has set groups up. /api/network/devices returns 10 devices unless
+        `max_devices` asks for more.
+        """
+        url = f"{self._base}/network/devices"
         try:
             with httpx.Client(timeout=10) as c:
                 sid = self._get_sid(c)
                 if sid is None:
                     return {"success": False, "error": "Authentication failed",
                             "suggestion": "Check api_token in config.json", "attempted": url}
-                resp = c.get(url, headers={"X-FTL-SID": sid})
+                resp = c.get(url, headers={"X-FTL-SID": sid}, params={"max_devices": 1000})
                 resp.raise_for_status()
-                entries = resp.json().get("clients", [])
+                devices = resp.json().get("devices", [])
             clients = []
-            for entry in entries:
+            for d in devices:
+                if not d.get("numQueries"):
+                    continue  # seen on the network, never asked Pi-hole anything
+                # A device can hold several addresses over time; report the one seen last.
+                latest = max(d.get("ips") or [{}], key=lambda a: a.get("lastSeen") or 0)
                 clients.append({
-                    "ip": entry.get("ip", ""),
-                    "hostname": entry.get("name", ""),
-                    "query_count": entry.get("count", 0),
-                    "last_query": entry.get("last_query", 0),
+                    "ip": latest.get("ip", ""),
+                    "hostname": latest.get("name") or "",
+                    "mac": d.get("hwaddr", ""),
+                    "vendor": d.get("macVendor") or "",
+                    "query_count": d.get("numQueries", 0),
+                    "last_query": d.get("lastQuery", 0),
                 })
             return {"success": True, "clients": clients}
         except httpx.HTTPStatusError as e:
