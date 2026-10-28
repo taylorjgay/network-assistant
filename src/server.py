@@ -80,7 +80,7 @@ def get_router_info() -> dict:
 
 @mcp.tool()
 def get_wan_policy() -> dict:
-    """Get ER605 WAN failover policy: mode (failover/load_balance), primary WAN, health check settings."""
+    """Get ER605 WAN policy: mode (failover/load_balance/single), primary and backup WAN, whether failover and load balancing are enabled."""
     return _er605.get_wan_policy() if _er605 else _NO_CONFIG
 
 
@@ -108,7 +108,7 @@ def compare_wan_health() -> dict:
 
 @mcp.tool()
 def get_port_forwards() -> dict:
-    """List all ER605 port forwarding (virtual server) rules: name, external port, internal IP/port, protocol."""
+    """List all ER605 port forwarding (virtual server) rules: name, external port, internal IP/port, protocol, enabled, WAN interfaces."""
     return _er605.get_port_forwards() if _er605 else _NO_CONFIG
 
 
@@ -133,8 +133,14 @@ def remove_port_forward(rule_id: str, dry_run: bool = False) -> dict:
 
 @mcp.tool()
 def get_firewall_rules() -> dict:
-    """List all ER605 firewall ACL rules: name, source IP, destination IP, action (allow/deny), protocol."""
+    """List all ER605 LAN ACL rules: name, action (ACCEPT/DROP), source and destination (IP group or address), service, zones, schedule."""
     return _er605.get_firewall_rules() if _er605 else _NO_CONFIG
+
+
+@mcp.tool()
+def get_dhcp_leases() -> dict:
+    """List the ER605 DHCP lease table (IP, MAC, hostname, time remaining) and static address reservations. The router is the LAN's DHCP server, so this covers every device that took an address, including ones not answering ARP."""
+    return _er605.get_dhcp_leases() if _er605 else _NO_CONFIG
 
 
 @mcp.tool()

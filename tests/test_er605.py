@@ -200,41 +200,6 @@ WAN_POLICY_URL = re.compile(
 
 
 @respx.mock
-def test_get_wan_policy_success(client):
-    respx.post(WAN_POLICY_URL).mock(return_value=httpx.Response(200, json={
-        "id": 1,
-        "result": {
-            "mode": "failover",
-            "primary_wan": "WAN1",
-            "health_check": {"interval": 30, "retry": 3, "target": "8.8.8.8"},
-        },
-        "error_code": "0",
-    }))
-    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
-
-    result = client.get_wan_policy()
-
-    assert result["success"] is True
-    assert result["mode"] == "failover"
-    assert result["primary_wan"] == "WAN1"
-    assert result["health_check"]["interval"] == 30
-
-
-@respx.mock
-def test_get_wan_policy_error_1014(client):
-    respx.post(WAN_POLICY_URL).mock(return_value=httpx.Response(200, json={
-        "error_code": "1014", "result": {}
-    }))
-    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
-
-    result = client.get_wan_policy()
-
-    assert result["success"] is False
-    assert "1014" in result["error"]
-    assert "standalone" in result["suggestion"]
-
-
-@respx.mock
 def test_get_wan_policy_auth_failure(client):
     respx.post(LOGIN_URL).side_effect = [_step1_response(), _login_fail_response("700")]
 
@@ -295,51 +260,6 @@ def test_set_wan_priority_error_1014(client):
 PORT_FWD_URL = re.compile(
     rf"{re.escape(BASE)}/cgi-bin/luci/;stok={STOK}/admin/nat\?form=virtual_server"
 )
-
-
-@respx.mock
-def test_get_port_forwards_success(client):
-    respx.post(PORT_FWD_URL).mock(return_value=httpx.Response(200, json={
-        "id": 1,
-        "result": {
-            "virtual_server": [
-                {
-                    "index": "1",
-                    "name": "Minecraft",
-                    "external_port": "25565",
-                    "internal_ip": "192.168.0.50",
-                    "internal_port": "25565",
-                    "protocol": "tcp",
-                    "enable": True,
-                }
-            ]
-        },
-        "error_code": "0",
-    }))
-    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
-
-    result = client.get_port_forwards()
-
-    assert result["success"] is True
-    assert len(result["rules"]) == 1
-    rule = result["rules"][0]
-    assert rule["name"] == "Minecraft"
-    assert rule["external_port"] == "25565"
-    assert rule["internal_ip"] == "192.168.0.50"
-
-
-@respx.mock
-def test_get_port_forwards_error_1014(client):
-    respx.post(PORT_FWD_URL).mock(return_value=httpx.Response(200, json={
-        "error_code": "1014", "result": {}
-    }))
-    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
-
-    result = client.get_port_forwards()
-
-    assert result["success"] is False
-    assert "1014" in result["error"]
-    assert "standalone" in result["suggestion"]
 
 
 @respx.mock
@@ -458,51 +378,6 @@ def test_remove_port_forward_error_1014(client):
 FIREWALL_URL = re.compile(
     rf"{re.escape(BASE)}/cgi-bin/luci/;stok={STOK}/admin/firewall\?form=acl_ip"
 )
-
-
-@respx.mock
-def test_get_firewall_rules_success(client):
-    respx.post(FIREWALL_URL).mock(return_value=httpx.Response(200, json={
-        "id": 1,
-        "result": {
-            "acl_ip": [
-                {
-                    "index": "1",
-                    "name": "Block IoT",
-                    "src_ip": "192.168.0.30",
-                    "dst_ip": "",
-                    "action": "deny",
-                    "protocol": "all",
-                    "enable": True,
-                }
-            ]
-        },
-        "error_code": "0",
-    }))
-    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
-
-    result = client.get_firewall_rules()
-
-    assert result["success"] is True
-    assert len(result["rules"]) == 1
-    rule = result["rules"][0]
-    assert rule["name"] == "Block IoT"
-    assert rule["action"] == "deny"
-    assert rule["src_ip"] == "192.168.0.30"
-
-
-@respx.mock
-def test_get_firewall_rules_error_1014(client):
-    respx.post(FIREWALL_URL).mock(return_value=httpx.Response(200, json={
-        "error_code": "1014", "result": {}
-    }))
-    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
-
-    result = client.get_firewall_rules()
-
-    assert result["success"] is False
-    assert "1014" in result["error"]
-    assert "standalone" in result["suggestion"]
 
 
 @respx.mock
@@ -696,3 +571,146 @@ def test_login_records_time():
         with httpx.Client(verify=False) as c:
             ER605Client("192.168.0.1", "admin", "secret")._login(c)
     assert er605_module._last_login_at > 0.0
+
+
+# --- Reads on the endpoint names the router's own web UI uses (shapes captured live 2026-10-28) ---
+
+def _admin_url(resource, form):
+    return re.compile(rf"{re.escape(BASE)}/cgi-bin/luci/;stok=\w+/admin/{resource}\?form={form}$")
+
+
+def _ok(result, **extra):
+    return httpx.Response(200, json={"id": 1, "result": result, "error_code": "0", **extra})
+
+
+def _logged_in():
+    respx.post(LOGIN_URL).side_effect = [_step1_response(), _step2_response()]
+
+
+@respx.mock
+def test_get_wan_policy_reads_failover_and_balance(client):
+    _logged_in()
+    respx.post(_admin_url("balance", "line_backup")).mock(return_value=_ok([{
+        "state": "on", "slave_iface": "WAN2", "master_iface": ["WAN1"], "mode": "fault_all",
+        "submode": "all", "timeobj": "--",
+    }], others={"max_rules": 2}))
+    respx.post(_admin_url("balance", "balance_basic")).mock(
+        return_value=_ok({"special_state": "on", "balance_state": "off"}))
+
+    result = client.get_wan_policy()
+
+    assert result == {
+        "success": True, "mode": "failover", "primary_wan": "WAN1", "backup_wan": "WAN2",
+        "failover_enabled": True, "failover_mode": "fault_all", "load_balance_enabled": False,
+    }
+
+
+@respx.mock
+def test_get_wan_policy_load_balance_mode(client):
+    _logged_in()
+    respx.post(_admin_url("balance", "line_backup")).mock(return_value=_ok([]))
+    respx.post(_admin_url("balance", "balance_basic")).mock(return_value=_ok({"balance_state": "on"}))
+
+    result = client.get_wan_policy()
+
+    assert result["mode"] == "load_balance"
+    assert result["primary_wan"] is None
+
+
+@respx.mock
+def test_get_wan_policy_endpoint_error_names_endpoint(client):
+    _logged_in()
+    respx.post(_admin_url("balance", "line_backup")).mock(
+        return_value=httpx.Response(200, json={"id": 1, "error_code": "1014"}))
+
+    result = client.get_wan_policy()
+
+    assert result["success"] is False
+    assert "balance?form=line_backup" in result["error"] and "1014" in result["error"]
+
+
+@respx.mock
+def test_get_port_forwards_reads_nat_vs(client):
+    _logged_in()
+    respx.post(_admin_url("nat", "vs")).mock(return_value=_ok([{
+        "internal_port": "88", "protocol": "UDP", "enable": "on", "external_port": "88",
+        "name": "Xbox_88_UDP", "wan_ip": "", "t_label": ["WAN1", "WAN/LAN2"],
+        "ipaddr": "192.168.0.148", "interface": ["WAN1", "WAN2"],
+    }], others={"max_rules": 64}))
+
+    result = client.get_port_forwards()
+
+    assert result["success"] is True and result["count"] == 1
+    assert result["rules"][0] == {
+        "id": None, "name": "Xbox_88_UDP", "external_port": "88", "internal_ip": "192.168.0.148",
+        "internal_port": "88", "protocol": "udp", "enabled": True, "wan_interfaces": ["WAN1", "WAN2"],
+    }
+
+
+@respx.mock
+def test_get_port_forwards_unknown_endpoint_is_an_error(client):
+    """A wrong endpoint name answers HTTP 404 with plain text, not JSON."""
+    _logged_in()
+    respx.post(_admin_url("nat", "vs")).mock(
+        return_value=httpx.Response(404, text="No root node was registered"))
+
+    result = client.get_port_forwards()
+
+    assert result["success"] is False
+    assert "nat?form=vs" in result["error"]
+    assert result["raw"]["http_status"] == 404
+    assert "No root node" in result["raw"]["body"]
+
+
+@respx.mock
+def test_get_firewall_rules_reads_acl_inner(client):
+    _logged_in()
+    respx.post(_admin_url("access_ctl", "acl_inner")).mock(return_value=_ok([{
+        "iptype": "ipv4", "zone": ["LAN"], "flag": "1", "policy": "DROP", "src": "brother_printer",
+        "time": "Any", "dest": "IPGROUP_LAN_REV", "v6flag": "0", "is_dst": "ipgroup", "user": "1",
+        "is_src": "ipgroup", "dst_domain": {}, "service": "ALL", "name": "brother_printer",
+        "states": ["new", "established", "invalid", "related"],
+    }], others={"max_rules": 128}))
+
+    result = client.get_firewall_rules()
+
+    assert result["success"] is True and result["count"] == 1
+    assert result["rules"][0] == {
+        "name": "brother_printer", "action": "DROP", "source": "brother_printer",
+        "source_type": "ipgroup", "destination": "IPGROUP_LAN_REV", "destination_type": "ipgroup",
+        "service": "ALL", "zones": ["LAN"], "schedule": "Any", "ip_version": "ipv4",
+    }
+
+
+@respx.mock
+def test_get_dhcp_leases_reads_clients_and_reservations(client):
+    _logged_in()
+    respx.post(_admin_url("dhcps", "client")).mock(return_value=_ok([
+        {"leasetime": "1:49:47", "name": "--", "macaddr": "34-9F-7B-2D-D8-A8", "ipaddr": "192.168.0.154", "interface": "lan"},
+        {"leasetime": "30:00:05", "name": "Xbox", "macaddr": "A0-85-FC-F8-0F-F9", "ipaddr": "192.168.0.148", "interface": "lan"},
+    ]))
+    respx.post(_admin_url("dhcps", "reservation")).mock(return_value=_ok([
+        {"mac": "A0-85-FC-F8-0F-F9", "note": "XBOXSERIESX", "id": "1", "ip": "192.168.0.148",
+         "bind": "0", "ip_bind": "on", "enable": "on", "interface": "LAN1"},
+    ], others={"max_rules": 1024}))
+
+    result = client.get_dhcp_leases()
+
+    assert result["success"] is True
+    assert result["lease_count"] == 2 and result["reservation_count"] == 1
+    assert result["leases"][0] == {
+        "ip": "192.168.0.154", "mac": "34:9f:7b:2d:d8:a8", "hostname": None,
+        "lease_remaining": "1:49:47", "lease_remaining_seconds": 6587,
+    }
+    assert result["leases"][1]["hostname"] == "Xbox"
+    assert result["leases"][1]["lease_remaining_seconds"] == 108005
+    assert result["reservations"][0] == {
+        "ip": "192.168.0.148", "mac": "a0:85:fc:f8:0f:f9", "note": "XBOXSERIESX", "enabled": True,
+    }
+
+
+def test_hms_to_seconds_rejects_non_durations():
+    from src.tools.er605 import _hms_to_seconds
+    assert _hms_to_seconds("Permanent") is None
+    assert _hms_to_seconds(None) is None
+    assert _hms_to_seconds("0:00:59") == 59

@@ -159,10 +159,13 @@ export interface UPnPResult {
 export interface PortForward {
   id: string | null
   name: string
-  external_port: number
+  // The ER605 sends ports as strings, and a port can be a range ("1000-2000").
+  external_port: string
   internal_ip: string
-  internal_port: number
+  internal_port: string
   protocol: string
+  enabled?: boolean
+  wan_interfaces?: string[]
 }
 
 export interface PortForwards {

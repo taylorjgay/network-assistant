@@ -1,6 +1,6 @@
 # Network Assistant
 
-A Python MCP server and React dashboard for managing a home network through Claude or a web UI. Connects directly to a TP-Link ER605 dual-WAN router, Deco X55 mesh nodes, and Pi-hole, via reverse-engineered local device APIs, to expose 39 tools covering device inventory, DNS management, WAN health monitoring, port forwarding, firewall rules, and network diagnostics.
+A Python MCP server and React dashboard for managing a home network through Claude or a web UI. Connects directly to a TP-Link ER605 dual-WAN router, Deco X55 mesh nodes, and Pi-hole, via reverse-engineered local device APIs, to expose 40 tools covering device inventory, DNS management, WAN health monitoring, port forwarding, firewall rules, and network diagnostics.
 
 > **Why this project exists:** None of these devices have official APIs. Getting all three talking to Python meant reverse-engineering each authentication scheme from scratch: bare RSA (no padding) for the ER605, a 3-step RSA + AES handshake with a session token bound to a specific TCP connection for the Deco, and Pi-hole v6's session-based auth that changed between minor versions. The interesting parts are documented in [API Notes](#api-notes-hard-won-quirks) below.
 
@@ -24,11 +24,11 @@ Ask Claude about your network in plain English. It calls the right tools and ret
 
 ## Features
 
-**39 MCP tools across 6 domains:**
+**40 MCP tools across 6 domains:**
 
 | Area | Tools |
 |---|---|
-| **TP-Link ER605 router** | Router info, WAN status, WAN policy, port forwards, firewall rules, WAN health, WAN speed comparison |
+| **TP-Link ER605 router** | Router info, WAN status, WAN policy, port forwards, firewall rules, DHCP leases, WAN health, WAN speed comparison |
 | **TP-Link Deco mesh** | Mesh health, connected clients |
 | **Pi-hole** | Stats, query log, top domains/clients, domain lists, clients, system info, blocking control, gravity update, query trends, local DNS records |
 | **Network inventory** | Device discovery (ARP + Pi-hole + Deco), MAC vendor lookup, device labeling |
@@ -37,7 +37,7 @@ Ask Claude about your network in plain English. It calls the right tools and ret
 
 **5-tab React dashboard** (Overview · Network · DNS · Firewall · Diagnostics) with auto-refresh, dark/light mode, and a live blocking toggle for Pi-hole.
 
-**198 tests, all mocked.** No live devices needed to run the test suite.
+**200 tests, all mocked.** No live devices needed to run the test suite.
 
 ## Requirements
 
@@ -109,7 +109,7 @@ Device labels are stored in `devices.json` (also gitignored). It's created autom
 .venv/bin/pytest -v
 ```
 
-198 tests, all mocked. No live devices needed.
+200 tests, all mocked. No live devices needed.
 
 ---
 
@@ -123,8 +123,8 @@ These took significant reverse engineering to figure out. Documented here for an
 - **Uptime for auth comes from Step 0** (`/locale?form=lang`), not the Step 1 login response. Firmware 2.3.2 omits it from Step 1.
 - **`error_code` is a string `"0"`**, not an integer. Check `== "0"`.
 - **CPU usage** is `{"core1": N, "core2": N, ...}`, not a single value.
-- **Working endpoints:** `interface/status2`, `sys_status/all_usage`, `firmware/upgrade`, `time/settings`, `ipv6/wanv6_status_info`.
-- **DHCP endpoints all return error 1014.** `dhcpd/*`, `lan/*`, and `network/dhcp` are inaccessible via the API. The DHCP lease table cannot be read programmatically.
+- **Working endpoints:** `interface/status2`, `sys_status/all_usage`, `firmware/upgrade`, `time/settings`, `ipv6/wanv6_status_info`, `nat?form=vs` (port forwards), `balance?form=line_backup` (WAN failover), `access_ctl?form=acl_inner` (ACL rules), `dhcps?form=client` (DHCP leases).
+- **Take endpoint names from the web UI's JavaScript.** The router serves its UI bundle at `/webpages/js/chunk-common.*.js`, but only to requests that carry a `Referer` header, and every admin endpoint the UI calls is named in it. Guessed names fail in three different ways: `nat/virtual_server` returns error 1014, `firewall/acl_ip` returns HTTP 404, and `network/wan_load_balance` returns HTTP 500. Early versions of this project read those failures as firmware limits. They were wrong names.
 - **Write method:** `POST /cgi-bin/luci/;stok={stok}/admin/{resource}?form={form}` with body `{"method": "set"|"add"|"del", "params": {...}}`.
 - **WAN IPs are typically private.** If your ISP modem is upstream, the ER605 WAN IP will be RFC1918, not a public IP.
 
@@ -141,7 +141,7 @@ These took significant reverse engineering to figure out. Documented here for an
 - **Never use a singleton client instance.** Concurrent calls share mutable `_stok`/`_aes_key`/`_aes_iv` state and corrupt each other. Create a fresh client per tool call.
 - **`device_list` field names** (confirmed from firmware): primary node = `role == "master"`; mesh connectivity = `group_status`; signal = `signal_strength.band5` in dBm; node name = `nickname`.
 - **`inet_status: "offline"` in AP mode is a firmware quirk, not a real outage.** In AP mode, `dial_status: "disconnected"` (the WAN is bridged, not dialed) causes the firmware to skip its cloud reachability check entirely, reporting offline even when internet works fine. This is not fixable via the API.
-- **`client_list` crashes on AP mode firmware.** It returns HTTP 500 (`attempt to index field 'device_mac' (a nil value)`). Known bug across multiple Deco models, still present in the latest firmware (1.8.0 Build 25102213). Likely because AP mode doesn't populate the DHCP device table.
+- **`client_list` crashes on AP mode firmware.** It returns HTTP 500 (`attempt to index field 'device_mac' (a nil value)`). Known bug across multiple Deco models, still present in the latest firmware (1.11.1 Build 26081714, retested October 2026). Likely because AP mode doesn't populate the DHCP device table.
 
 ### Pi-hole v6
 

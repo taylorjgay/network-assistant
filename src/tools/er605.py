@@ -23,6 +23,20 @@ def _rsa_encrypt(plaintext: str, modulus_hex: str) -> str:
     return format(pow(m, 65537, n), "0256x")
 
 
+def _normalize_mac(mac: str | None) -> str | None:
+    """ER605 sends `34-9F-7B-2D-D8-A8`; devices.json and the rest of the app use `34:9f:7b:2d:d8:a8`."""
+    return mac.replace("-", ":").lower() if mac else None
+
+
+def _hms_to_seconds(value: str | None) -> int | None:
+    """Lease time remaining as `H:MM:SS` (hours may exceed 24); None for anything else."""
+    try:
+        h, m, s = (int(p) for p in (value or "").split(":"))
+    except ValueError:
+        return None
+    return h * 3600 + m * 60 + s
+
+
 class ER605Client:
     def __init__(self, host: str, username: str, password: str):
         self.host = host
@@ -43,7 +57,10 @@ class ER605Client:
         try:
             return resp.json()
         except ValueError:
-            return {"error_code": "1014", "_empty_body": True}
+            # Not JSON. Keep the 1014 code callers expect, but carry what the router actually
+            # said: a wrong endpoint name answers 404 or 500 with plain text, not a firmware error.
+            return {"error_code": "1014", "_empty_body": True,
+                    "http_status": resp.status_code, "body": resp.text[:200]}
 
     def _get_uptime(self, client: httpx.Client, step1_result: dict) -> str:
         """Get uptime for password encryption from locale endpoint (operation=read format)."""
@@ -109,7 +126,13 @@ class ER605Client:
         url = f"{self._base}/cgi-bin/luci/;stok={stok}/admin/{resource}?form={form}"
         return self._post_form(client, url, {"method": "del", "params": params})
 
-    def get_wan_policy(self) -> dict:
+    def _read(self, what: str, *endpoints: tuple[str, str]) -> dict:
+        """Log in once and read admin endpoints in order.
+
+        Returns {"success": True, "results": [result, ...]} or a structured error. Endpoint
+        names come from the router's own web UI JS (/webpages/js/chunk-common.*.js); guessed
+        names fail with 1014, HTTP 404 or HTTP 500 depending on how wrong they are.
+        """
         url = self._base
         try:
             with httpx.Client(verify=False, timeout=10) as client:
@@ -121,24 +144,19 @@ class ER605Client:
                         "suggestion": "Check er605.username and er605.password in config.json",
                         "attempted": url,
                     }
-                data = self._api(client, stok, "network", "wan_load_balance")
-
-            if data.get("error_code") != "0":
-                return {
-                    "success": False,
-                    "error": f"ER605 WAN policy endpoint error {data.get('error_code')}",
-                    "suggestion": "This endpoint may not be accessible on standalone ER605 firmware 2.x. Try the Web UI instead.",
-                    "attempted": url,
-                    "raw": data,
-                }
-
-            result = data.get("result", {})
-            return {
-                "success": True,
-                "mode": result.get("mode"),
-                "primary_wan": result.get("primary_wan"),
-                "health_check": result.get("health_check", {}),
-            }
+                results = []
+                for resource, form in endpoints:
+                    data = self._api(client, stok, resource, form)
+                    if data.get("error_code") != "0":
+                        return {
+                            "success": False,
+                            "error": f"ER605 {what} endpoint {resource}?form={form} error {data.get('error_code')}",
+                            "suggestion": "Check the endpoint name against the router web UI JS",
+                            "attempted": f"{url}/cgi-bin/luci/;stok=.../admin/{resource}?form={form}",
+                            "raw": data,
+                        }
+                    results.append(data.get("result"))
+            return {"success": True, "results": results}
         except httpx.ConnectError:
             return {
                 "success": False,
@@ -148,6 +166,25 @@ class ER605Client:
             }
         except Exception as e:
             return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+
+    def get_wan_policy(self) -> dict:
+        read = self._read("WAN policy", ("balance", "line_backup"), ("balance", "balance_basic"))
+        if not read["success"]:
+            return read
+        backups, basic = read["results"]
+        backup = (backups or [{}])[0]
+        failover_on = backup.get("state") == "on"
+        balance_on = (basic or {}).get("balance_state") == "on"
+        masters = backup.get("master_iface") or []
+        return {
+            "success": True,
+            "mode": "load_balance" if balance_on else "failover" if failover_on else "single",
+            "primary_wan": masters[0] if masters else None,
+            "backup_wan": backup.get("slave_iface"),
+            "failover_enabled": failover_on,
+            "failover_mode": backup.get("mode"),
+            "load_balance_enabled": balance_on,
+        }
 
     def set_wan_priority(self, primary_wan: str, dry_run: bool = False) -> dict:
         url = self._base
@@ -203,53 +240,29 @@ class ER605Client:
             return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
 
     def get_port_forwards(self) -> dict:
-        url = self._base
-        try:
-            with httpx.Client(verify=False, timeout=10) as client:
-                stok, err = self._login(client)
-                if stok is None:
-                    return {
-                        "success": False,
-                        "error": f"ER605 authentication failed: {err}",
-                        "suggestion": "Check er605.username and er605.password in config.json",
-                        "attempted": url,
-                    }
-                data = self._api(client, stok, "nat", "virtual_server")
-
-            if data.get("error_code") != "0":
-                return {
-                    "success": False,
-                    "error": f"ER605 port forward endpoint error {data.get('error_code')}",
-                    "suggestion": "This endpoint may not be accessible on standalone ER605 firmware 2.x. Try the Web UI instead.",
-                    "attempted": url,
-                    "raw": data,
+        read = self._read("port forward", ("nat", "vs"))
+        if not read["success"]:
+            return read
+        rules = read["results"][0] or []
+        return {
+            "success": True,
+            "rules": [
+                {
+                    # No id until removal is wired to the real endpoint; the dashboard
+                    # disables Remove for rules without one.
+                    "id": None,
+                    "name": r.get("name"),
+                    "external_port": r.get("external_port"),
+                    "internal_ip": r.get("ipaddr"),
+                    "internal_port": r.get("internal_port"),
+                    "protocol": (r.get("protocol") or "").lower(),
+                    "enabled": r.get("enable") == "on",
+                    "wan_interfaces": r.get("interface") or [],
                 }
-
-            rules = data.get("result", {}).get("virtual_server", [])
-            return {
-                "success": True,
-                "rules": [
-                    {
-                        "id": r.get("index") or r.get("id"),
-                        "name": r.get("name"),
-                        "external_port": r.get("external_port"),
-                        "internal_ip": r.get("internal_ip"),
-                        "internal_port": r.get("internal_port"),
-                        "protocol": r.get("protocol"),
-                        "enabled": r.get("enable") or r.get("enabled"),
-                    }
-                    for r in rules
-                ],
-            }
-        except httpx.ConnectError:
-            return {
-                "success": False,
-                "error": "Cannot connect to ER605",
-                "suggestion": f"Verify er605.host in config.json — tried {self.host}",
-                "attempted": url,
-            }
-        except Exception as e:
-            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+                for r in rules
+            ],
+            "count": len(rules),
+        }
 
     def add_port_forward(
         self,
@@ -365,53 +378,61 @@ class ER605Client:
             return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
 
     def get_firewall_rules(self) -> dict:
-        url = self._base
-        try:
-            with httpx.Client(verify=False, timeout=10) as client:
-                stok, err = self._login(client)
-                if stok is None:
-                    return {
-                        "success": False,
-                        "error": f"ER605 authentication failed: {err}",
-                        "suggestion": "Check er605.username and er605.password in config.json",
-                        "attempted": url,
-                    }
-                data = self._api(client, stok, "firewall", "acl_ip")
-
-            if data.get("error_code") != "0":
-                return {
-                    "success": False,
-                    "error": f"ER605 firewall endpoint error {data.get('error_code')}",
-                    "suggestion": "This endpoint may not be accessible on standalone ER605 firmware 2.x. Try the Web UI instead.",
-                    "attempted": url,
-                    "raw": data,
+        read = self._read("firewall ACL", ("access_ctl", "acl_inner"))
+        if not read["success"]:
+            return read
+        rules = read["results"][0] or []
+        # No "enabled" field: the router sends `flag` and `user` ("1"), and which one is
+        # the on/off switch is not confirmed.
+        return {
+            "success": True,
+            "rules": [
+                {
+                    "name": r.get("name"),
+                    "action": r.get("policy"),
+                    "source": r.get("src"),
+                    "source_type": r.get("is_src"),
+                    "destination": r.get("dest"),
+                    "destination_type": r.get("is_dst"),
+                    "service": r.get("service"),
+                    "zones": r.get("zone") or [],
+                    "schedule": r.get("time"),
+                    "ip_version": r.get("iptype"),
                 }
+                for r in rules
+            ],
+            "count": len(rules),
+        }
 
-            rules = data.get("result", {}).get("acl_ip", [])
-            return {
-                "success": True,
-                "rules": [
-                    {
-                        "id": r.get("index") or r.get("id"),
-                        "name": r.get("name"),
-                        "src_ip": r.get("src_ip", ""),
-                        "dst_ip": r.get("dst_ip", ""),
-                        "action": r.get("action"),
-                        "protocol": r.get("protocol"),
-                        "enabled": r.get("enable") or r.get("enabled"),
-                    }
-                    for r in rules
-                ],
-            }
-        except httpx.ConnectError:
-            return {
-                "success": False,
-                "error": "Cannot connect to ER605",
-                "suggestion": f"Verify er605.host in config.json — tried {self.host}",
-                "attempted": url,
-            }
-        except Exception as e:
-            return {"success": False, "error": str(e), "suggestion": "", "attempted": url}
+    def get_dhcp_leases(self) -> dict:
+        read = self._read("DHCP", ("dhcps", "client"), ("dhcps", "reservation"))
+        if not read["success"]:
+            return read
+        clients, reservations = (r or [] for r in read["results"])
+        return {
+            "success": True,
+            "leases": [
+                {
+                    "ip": c.get("ipaddr"),
+                    "mac": _normalize_mac(c.get("macaddr")),
+                    "hostname": None if c.get("name") in (None, "", "--") else c.get("name"),
+                    "lease_remaining": c.get("leasetime"),
+                    "lease_remaining_seconds": _hms_to_seconds(c.get("leasetime")),
+                }
+                for c in clients
+            ],
+            "reservations": [
+                {
+                    "ip": r.get("ip"),
+                    "mac": _normalize_mac(r.get("mac")),
+                    "note": r.get("note") or None,
+                    "enabled": r.get("enable") == "on",
+                }
+                for r in reservations
+            ],
+            "lease_count": len(clients),
+            "reservation_count": len(reservations),
+        }
 
     def add_firewall_rule(
         self,
