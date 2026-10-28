@@ -211,3 +211,18 @@ def test_decode_name_leaves_plain_names_alone():
     assert deco_module._decode_name("cm9zaWUtZGlzcGxheQ==") == "rosie-display"
     assert deco_module._decode_name("Taylor's iPhone") == "Taylor's iPhone"
     assert deco_module._decode_name(None) is None
+
+
+def test_busy_deco_serves_recent_result_instead_of_waiting():
+    """A ~25s client refresh holds the lock; the Network page's mesh call must not queue behind it."""
+    deco_module._cache["mesh"] = (time.monotonic() - 60, {"success": True, "nodes": [], "node_count": 0})
+    deco_module._session_lock.acquire()  # stand-in for the refresh in progress
+    try:
+        with patch.object(DecoClient, "_request") as req:
+            started = time.monotonic()
+            result = DecoClient(host="192.168.0.104", password="x").get_mesh_health()
+        assert time.monotonic() - started < 0.5
+        assert result["success"] is True
+        req.assert_not_called()
+    finally:
+        deco_module._session_lock.release()

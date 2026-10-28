@@ -22,21 +22,37 @@ _session_lock = threading.Lock()
 # A Deco login costs ~3-9s, so mesh health and client list results are shared for this
 # long: callers that queued on the lock get the result the first caller just fetched.
 _MESH_TTL = 20.0
+# While another call holds the Deco, a result up to this old is served rather than waiting.
+_BUSY_STALE_OK = 120.0
 _cache: dict[str, tuple[float, dict]] = {}
 
 _BANDS = {"band2_4": "2.4GHz", "band5": "5GHz"}
 
 
 def _cached(key: str, fetch) -> dict:
-    """Run `fetch` under the session lock unless a successful result under `key` is fresh."""
-    with _session_lock:
-        hit = _cache.get(key)
+    """Return a fresh cached result for `key`, or run `fetch` under the session lock.
+
+    The cache is checked before the lock: a background client refresh holds the lock for
+    ~25s, and a caller with a usable result must not queue behind it. If the lock is busy,
+    a result up to _BUSY_STALE_OK old is served instead of waiting.
+    """
+    hit = _cache.get(key)
+    if hit is not None and time.monotonic() - hit[0] < _MESH_TTL:
+        return copy.deepcopy(hit[1])
+    if not _session_lock.acquire(blocking=False):
+        if hit is not None and time.monotonic() - hit[0] < _BUSY_STALE_OK:
+            return copy.deepcopy(hit[1])
+        _session_lock.acquire()
+    try:
+        hit = _cache.get(key)  # filled while we waited?
         if hit is not None and time.monotonic() - hit[0] < _MESH_TTL:
             return copy.deepcopy(hit[1])
         result = fetch()
         if result["success"]:
             _cache[key] = (time.monotonic(), result)
         return copy.deepcopy(result)
+    finally:
+        _session_lock.release()
 
 
 def cached_result(key: str, max_age: float) -> dict | None:
